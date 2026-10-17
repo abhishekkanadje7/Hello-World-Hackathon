@@ -40,17 +40,12 @@ ROUTINE_KEYWORDS = {
 }
 
 def analyze_sentiment_and_frustration(text: str) -> Tuple[float, float, List[str]]:
-    """
-    Returns (frustration_score 0-100, compound_sentiment -1.0 to 1.0, detected_frustration_keywords)
-    """
     scores = analyzer.polarity_scores(text)
     compound = scores['compound']
     
-    # Base frustration mapped from compound (-1.0 -> 100, 0.0 -> 25, 1.0 -> 0)
     # Linear interpolation: compound -1 => 100, compound 1 => 0
     base_frustration = ((1.0 - compound) / 2.0) * 100.0
     
-    # Emotional boosters
     text_lower = text.lower()
     detected_keywords = []
     keyword_boost = 0
@@ -60,7 +55,7 @@ def analyze_sentiment_and_frustration(text: str) -> Tuple[float, float, List[str
             detected_keywords.append(kw)
             keyword_boost += boost
             
-    # Check for excessive exclamation marks (e.g., "!!!" or "?!")
+    # Check for excessive exclamation marks
     exclamation_count = text.count('!')
     if exclamation_count >= 3:
         keyword_boost += 12
@@ -78,25 +73,19 @@ def analyze_sentiment_and_frustration(text: str) -> Tuple[float, float, List[str
     return round(total_frustration, 1), round(compound, 3), detected_keywords
 
 def analyze_urgency(text: str) -> Tuple[float, List[str]]:
-    """
-    Calculates urgency score (0-100) based on critical keywords, outage impact, and intent.
-    """
     text_lower = text.lower()
     detected_urgency_kws = []
     urgency_points = 15.0  # baseline
     
-    # Check urgency keywords
     for kw, pts in URGENCY_KEYWORDS.items():
         if re.search(r'\b' + re.escape(kw) + r'\b', text_lower):
             detected_urgency_kws.append(kw)
             urgency_points += pts
             
-    # Check routine keywords (reduce urgency)
     for kw, reduction in ROUTINE_KEYWORDS.items():
         if kw in text_lower:
             urgency_points += reduction
             
-    # Punctuation / CAPS urgency amplification
     if "!" in text:
         urgency_points += 5
     if any(re.findall(r'\b(NOW|URGENT|CRITICAL|DOWN|EMERGENCY)\b', text)):
@@ -111,9 +100,6 @@ def calculate_priority_score(
     customer_value_score: float,
     weights = CURRENT_WEIGHTS
 ) -> int:
-    """
-    Priority Score = (Frustration * W_f) + (Urgency * W_u) + (Value * W_v)
-    """
     total_w = weights.frustration_weight + weights.urgency_weight + weights.customer_value_weight
     if total_w <= 0:
         total_w = 1.0
@@ -128,37 +114,31 @@ def calculate_priority_score(
 def build_explainability_and_route(
     subject: str,
     description: str,
-    plan_tier: str,
+    customer_type: str,
     kb_match: Optional[Dict[str, Any]] = None,
     weights = CURRENT_WEIGHTS
 ) -> ExplainabilityBreakdown:
     full_text = f"{subject}\n{description}"
     
-    # 1. Analyze Frustration
     frustration, compound, frust_kws = analyze_sentiment_and_frustration(full_text)
-    
-    # 2. Analyze Urgency
     urgency, urgency_kws = analyze_urgency(full_text)
     
-    # 3. Customer Value
-    tier_clean = plan_tier.lower()
+    tier_clean = customer_type.lower()
     value_score = float(PLAN_VALUE_MAP.get(tier_clean, 20))
     
-    # 4. Total Priority Score
     priority_score = calculate_priority_score(frustration, urgency, value_score, weights)
     
-    # 5. Routing Tier Determination
-    if kb_match and priority_score < weights.standard_threshold:
-        assigned_tier = "KB Auto-reply"
-        routing_reason = f"Routine FAQ match ({kb_match.get('title')}) with low priority score ({priority_score}). Auto-resolved by Knowledge Base."
+    # Routing Tier Determination: Critical | Standard | Routine
+    if kb_match and priority_score < weights.critical_threshold:
+        assigned_tier = "Routine"
+        routing_reason = f"Routine FAQ match ('{kb_match.get('title')}') with priority score ({priority_score}). Auto-resolved by Knowledge Base."
     elif priority_score >= weights.critical_threshold:
-        assigned_tier = "Senior Agent"
-        routing_reason = f"High priority score ({priority_score}/100) exceeded critical threshold ({weights.critical_threshold}). Immediate Senior Escalation."
+        assigned_tier = "Critical"
+        routing_reason = f"High priority score ({priority_score}/100) exceeded critical threshold ({weights.critical_threshold}). Immediate Senior Agent Escalation."
     else:
-        assigned_tier = "Standard Agent"
+        assigned_tier = "Standard"
         routing_reason = f"Score ({priority_score}/100) routed to Standard Agent queue."
 
-    # Compute individual factor contributions
     total_w = weights.frustration_weight + weights.urgency_weight + weights.customer_value_weight
     w_f = weights.frustration_weight / total_w
     w_u = weights.urgency_weight / total_w
@@ -186,16 +166,16 @@ def build_explainability_and_route(
             detail=f"Urgency assessment: {urgency}/100. Detected keywords: {', '.join(urgency_kws) if urgency_kws else 'None'}"
         ),
         ExplainabilityItem(
-            factor="Customer Plan Tier",
+            factor="Customer Account Tier",
             score=value_score,
             weight=round(w_v * 100, 1),
             contribution=v_contrib,
-            detail=f"{plan_tier.capitalize()} account tier ({int(value_score)} baseline points)"
+            detail=f"{customer_type.capitalize()} customer tier ({int(value_score)} baseline points)"
         )
     ]
     
     summary = (
-        f"Assigned to {assigned_tier} with score {priority_score}/100. "
+        f"Assigned to {assigned_tier} tier with score {priority_score}/100. "
         f"[Frustration: {f_contrib}pts, Urgency: {u_contrib}pts, Value: {v_contrib}pts]. "
         f"{routing_reason}"
     )

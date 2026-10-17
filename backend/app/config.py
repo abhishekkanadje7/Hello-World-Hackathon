@@ -1,5 +1,6 @@
 import os
 from pydantic import BaseModel
+from datetime import timedelta
 
 class SystemWeights(BaseModel):
     frustration_weight: float = 0.40
@@ -8,14 +9,20 @@ class SystemWeights(BaseModel):
     critical_threshold: int = 70
     standard_threshold: int = 40
 
-# Current active weights (can be updated dynamically by Admin)
 CURRENT_WEIGHTS = SystemWeights()
 
 PLAN_VALUE_MAP = {
+    "vip": 100,
     "enterprise": 100,
+    "premium": 60,
     "pro": 60,
+    "regular": 20,
     "free": 20
 }
 
-SECRET_KEY = "triagex-secret-key-hackathon-2026"
-ALGORITHM = "HS256"
+JWT_SECRET = os.getenv("JWT_SECRET", "triagex-jwt-secret-demo-key-2026")
+JWT_ALGORITHM = "HS256"
+JWT_EXPIRATION_HOURS = 12
+
+ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "admin@triagex.com").strip().lower()
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "Admin@123")

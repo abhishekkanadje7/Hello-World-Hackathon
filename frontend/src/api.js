@@ -1,99 +1,167 @@
 const API_BASE = '/api';
 
-export async function fetchHealth() {
-  const res = await fetch(`${API_BASE}/health`);
+let onSessionExpiredCallback = null;
+
+export function setOnSessionExpired(callback) {
+  onSessionExpiredCallback = callback;
+}
+
+export function getToken() {
+  return localStorage.getItem('triagex_token');
+}
+
+export function setToken(token) {
+  if (token) {
+    localStorage.setItem('triagex_token', token);
+  } else {
+    localStorage.removeItem('triagex_token');
+  }
+}
+
+async function request(endpoint, options = {}) {
+  const token = getToken();
+  const headers = {
+    'Content-Type': 'application/json',
+    ...(options.headers || {})
+  };
+
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
+  const res = await fetch(`${API_BASE}${endpoint}`, {
+    ...options,
+    headers
+  });
+
+  if (res.status === 401) {
+    // Check if it was an expired token on a protected endpoint
+    if (!endpoint.includes('/auth/login') && !endpoint.includes('/auth/register')) {
+      setToken(null);
+      localStorage.removeItem('triagex_user');
+      if (onSessionExpiredCallback) {
+        onSessionExpiredCallback('Your session expired, please log in again.');
+      }
+    }
+  }
+
+  if (!res.ok) {
+    let errMessage = 'Request failed';
+    try {
+      const err = await res.json();
+      errMessage = err.detail || errMessage;
+    } catch (e) {
+      errMessage = res.statusText || errMessage;
+    }
+    const error = new Error(errMessage);
+    error.status = res.status;
+    throw error;
+  }
+
   return res.json();
+}
+
+// --- AUTH APIS ---
+
+export async function loginUser(email, password) {
+  return request('/auth/login', {
+    method: 'POST',
+    body: JSON.stringify({ email, password })
+  });
+}
+
+export async function registerCustomer(name, email, password) {
+  return request('/auth/register', {
+    method: 'POST',
+    body: JSON.stringify({ name, email, password })
+  });
+}
+
+export async function getMe() {
+  return request('/auth/me');
+}
+
+export async function changePassword(current_password, new_password) {
+  return request('/auth/change-password', {
+    method: 'POST',
+    body: JSON.stringify({ current_password, new_password })
+  });
 }
 
 export async function fetchDemoUsers() {
-  const res = await fetch(`${API_BASE}/auth/demo-users`);
-  return res.json();
+  return request('/auth/demo-users');
 }
 
-export async function loginUser(email, password) {
-  const res = await fetch(`${API_BASE}/auth/login`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, password })
-  });
-  if (!res.ok) {
-    const err = await res.json();
-    throw new Error(err.detail || 'Login failed');
-  }
-  return res.json();
-}
+// --- TICKETS APIS ---
 
-export async function fetchTickets(status = null, tier = null) {
+export async function fetchTickets(status = null) {
   const params = new URLSearchParams();
-  if (status) params.append('status', status);
-  if (tier) params.append('tier', tier);
-  const res = await fetch(`${API_BASE}/tickets?${params.toString()}`);
-  return res.json();
+  if (status) params.append('status_filter', status);
+  return request(`/tickets?${params.toString()}`);
 }
 
 export async function fetchTicketById(id) {
-  const res = await fetch(`${API_BASE}/tickets/${id}`);
-  return res.json();
-}
-
-export async function previewTicketScore(payload) {
-  const res = await fetch(`${API_BASE}/tickets/preview-score`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload)
-  });
-  return res.json();
+  return request(`/tickets/${id}`);
 }
 
 export async function createTicket(ticketData) {
-  const res = await fetch(`${API_BASE}/tickets`, {
+  return request('/tickets', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(ticketData)
   });
-  if (!res.ok) {
-    const err = await res.json();
-    throw new Error(err.detail || 'Failed to submit ticket');
-  }
-  return res.json();
 }
 
-export async function updateTicketStatus(id, updateData) {
-  const res = await fetch(`${API_BASE}/tickets/${id}`, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(updateData)
+export async function previewTicketScore(payload) {
+  return request('/tickets/preview-score', {
+    method: 'POST',
+    body: JSON.stringify(payload)
   });
-  return res.json();
+}
+
+export async function fetchTicketReplies(ticketId) {
+  return request(`/tickets/${ticketId}/replies`);
+}
+
+export async function sendTicketReply(ticketId, message, is_internal = false) {
+  return request(`/tickets/${ticketId}/replies`, {
+    method: 'POST',
+    body: JSON.stringify({ message, is_internal })
+  });
+}
+
+export async function updateTicketStatus(id, status, assigned_agent_id = null, assigned_agent_name = null, note = null) {
+  return request(`/tickets/${id}/status`, {
+    method: 'PATCH',
+    body: JSON.stringify({
+      status,
+      assigned_agent_id,
+      assigned_agent_name,
+      resolution_note: note
+    })
+  });
 }
 
 export async function fetchStats() {
-  const res = await fetch(`${API_BASE}/stats`);
-  return res.json();
+  return request('/stats');
 }
 
 export async function fetchWeights() {
-  const res = await fetch(`${API_BASE}/admin/weights`);
-  return res.json();
+  return request('/admin/weights');
 }
 
 export async function updateWeights(weightsData) {
-  const res = await fetch(`${API_BASE}/admin/weights`, {
+  return request('/admin/weights', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(weightsData)
   });
-  return res.json();
 }
 
 export async function fetchAuditLogs() {
-  const res = await fetch(`${API_BASE}/admin/audit-logs`);
-  return res.json();
+  return request('/admin/audit-logs');
 }
 
 export async function fetchKbArticles() {
-  const res = await fetch(`${API_BASE}/kb/articles`);
-  return res.json();
+  return request('/kb/articles');
 }
 
 export function initWebSocket(onMessage, onOpen, onClose) {

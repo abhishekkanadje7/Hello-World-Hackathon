@@ -1,86 +1,78 @@
-# TriageX 2.0 — Predictive Customer Support Triage & Sentiment Router
+# TriageX 2.1 — Predictive Customer Support Triage & Sentiment Router
 ### Smart India Hackathon / Hello World 2026 | Team TriageX (Advanced Track - PS 4)
 
 ---
 
 ## 🌟 Overview
-**TriageX** is an enterprise-grade, full-stack AI-driven customer support triage and sentiment-routing platform. Instead of primitive first-come, first-served (FIFO) queues, TriageX analyzes customer sentiment, emotional urgency, and plan tier in real-time, calculating an **Explainable Priority Score (0–100)** to route tickets to Senior Staff, Support Agents, or automated Knowledge Base deflection.
+**TriageX** is an enterprise-grade AI-powered customer support triage and sentiment routing system. Instead of primitive first-come, first-served (FIFO) queues, TriageX analyzes customer sentiment, emotional urgency, and account plan value in real-time, calculating an **Explainable Priority Score (0–100)** to route tickets to Senior Engineers, Support Agents, or automated Knowledge Base deflection with binding SLA targets.
 
 ---
 
-## 🏗️ Architecture & Tech Stack
+## 🔐 Account Rules & Role-Based Access Control (RBAC)
 
-| Layer | Technology | Details |
-|---|---|---|
-| **Frontend** | React 18, Vite, Tailwind CSS, Lucide Icons | Ultra-responsive dark enterprise UI with real-time NLP typing preview |
-| **Backend** | Python FastAPI (Async REST + WebSockets) | High-throughput async API handling live ticket ingestion and queue broadcasts |
-| **NLP Engine** | VADER Sentiment Analysis + Intent Regex | Evaluates frustration index, shouting detectors, outage indicators, and deadlines |
-| **Database** | SQLite + Thread-Safe Connection Pool | Persistent tickets, audit logs, user profiles, and knowledge base rules |
-| **Realtime** | Native Full-Duplex WebSockets | Broadcasts new tickets and dynamic recalculations without manual page refreshes |
+1. **Customers**:
+   - Can register publicly on `/register`.
+   - Public registration **always** creates role `customer` with customer type `Regular`.
+   - The server strictly ignores any client-supplied role or customer type. Only an admin can promote accounts to Premium or VIP.
+   - Customers see and create **only their own tickets**; the customer type is bound securely from their account profile.
+2. **Admin**:
+   - Exactly **one fixed admin account**, bootstrapped automatically at first startup if no admin exists.
+   - Credentials configured via environment variables `ADMIN_EMAIL` and `ADMIN_PASSWORD` (defaults: `admin@triagex.com` / `Admin@123`).
+   - There is no public way to register as an admin.
+3. **Support Agents**:
+   - Cannot self-register. Created and provisioned exclusively by the admin.
+   - Must change temporary password upon first login (`must_change_password`).
+   - Senior Agents see **Critical** tier tickets ($\ge 70$) + assigned tickets.
+   - Standard Agents see **Standard** ($40-69$) and **Routine** ($<40$) tickets + assigned tickets.
+4. **Security Lockout & Headers**:
+   - 5 consecutive failed login attempts locks the account for 5 minutes.
+   - JWT tokens valid for 12 hours with `Authorization: Bearer <token>` header.
+   - Internal notes (`is_internal = True`) are hidden from customers and visible only to agents and admins.
 
 ---
 
-## ⚡ How to Run
+## 👥 Seeded Demo Accounts
 
-### Step 1: Open Terminal in Project Directory
-```bash
-cd /Users/abhishekkanadje7/.gemini/antigravity/scratch/triagex-fullstack
-```
+| Role | Name | Email | Password | Details |
+|---|---|---|---|---|
+| **Admin** | System Administrator | `admin@triagex.com` | `Admin@123` | Full system control & weights tuning |
+| **Senior Agent** | Pooja Sharma | `senior@triagex.com` | `Agent@123` | Senior Engineer (Critical Tier) |
+| **Standard Agent** | Vikas Patil | `agent@triagex.com` | `Agent@123` | Support Agent (Standard / Routine) |
+| **Customer (VIP)** | Abhishek Kanadje | `customer@triagex.com` | `Customer@123` | VIP Plan (100 baseline pts) |
+| **Customer (Premium)** | Neha Kulkarni | `neha@startuply.io` | `Customer@123` | Premium Plan (60 baseline pts) |
+| **Customer (Regular)** | Siddharth Joshi | `siddharth@gmail.com` | `Customer@123` | Regular Plan (20 baseline pts) |
 
-### Step 2: Launch with One Single Command
+> ⚠️ **Note**: When upgrading from earlier versions, delete `backend/triagex.db` so the database recreates all tables fresh.
+
+---
+
+## 🚀 How to Run
+
+### Step 1: Start Platform (One Single Command)
 ```bash
 ./start.sh
 ```
+- **Frontend App**: `http://localhost:5173`
+- **Backend REST API**: `http://127.0.0.1:8000`
+- **Interactive Swagger Docs**: `http://127.0.0.1:8000/docs`
+- **Live WebSocket Feed**: `ws://127.0.0.1:8000/ws`
 
-This automatically:
-1. Launches the **Python FastAPI Backend** on `http://127.0.0.1:8000`
-2. Launches the **Vite React Frontend** on `http://localhost:5173`
-3. Initializes the SQLite database and seeds 5 realistic test tickets
-
----
-
-## 🎯 Evaluator Demo Script (How to Present to Judges)
-
-### Step 1: Open `http://localhost:5173`
-Show the **Live Agent Queue**. Point out:
-- Tickets are sorted by **Priority Score (0–100)**, NOT by arrival time (FIFO).
-- Critical tickets ($\ge 70$) have a pulsing red glow and are escalated to **Senior Agent**.
-
-### Step 2: Demonstrate "Explainable AI (XAI)"
-Click the **"Explain AI"** button on ticket `TX-901`:
-- Show the judges the point-by-point breakdown:
-  - **Frustration Score (40%)**: compound sentiment, exclamation shouting, hostile keywords.
-  - **Urgency Score (40%)**: outage triggers like `down`, `payment failed`.
-  - **Customer Value (20%)**: Enterprise Plan Tier (100 pts).
-- Show the **AI Auto-Suggested Response** ready for the agent to send in 1 click.
-
-### Step 3: Switch to "Customer Portal" & 1-Click Scenarios
-Click **"Customer Portal"** in the top navigation:
-- Click the top button: **"🔥 Critical Enterprise Outage"**.
-- Watch the **Live NLP Radar** update in real-time as the text is loaded:
-  - Priority jumps to **~95/100**.
-  - Route predicts **Senior Agent**.
-- Click **"Submit Ticket"**:
-  - Immediately, a WebSocket notification pings across all open screens!
-  - Switch back to the **Live Queue** tab: The new ticket is at the very top of the list!
-
-### Step 4: Demonstrate Knowledge Base Auto-Deflection
-- In the Customer Portal, click **"💡 Routine Password Reset FAQ"**.
-- Click **"Submit Ticket"**.
-- Show the judges: It was **instantly Auto-Resolved by the AI Bot in 0 seconds**, without bothering any human agent!
-
-### Step 5: Switch to "Admin & Weights"
-- Show the sliders for $W_1$ (Frustration), $W_2$ (Urgency), and $W_3$ (Customer Value).
-- Adjust the sliders and click **"Apply & Recalculate Live Queue"**.
-- Show how the entire SQLite database is recalculated on the fly and pushed live over WebSockets.
+### Step 2: Run Automated Backend Tests
+```bash
+./venv/bin/python3 test_c1_backend.py
+```
 
 ---
 
-## 👥 Pre-Configured Demo Accounts (1-Click Switcher)
+## 🗺️ Application Routes
 
-Click **"Switch Role"** in the top-right navbar to test any persona:
-1. **Rahul Deshmukh (Admin)** — `admin@triagex.ai` (Password: `admin123`)
-2. **Pooja Sharma (Senior Agent)** — `pooja.senior@triagex.ai` (Password: `senior123`)
-3. **Vikas Patil (Support Agent)** — `vikas.agent@triagex.ai` (Password: `agent123`)
-4. **Abhishek Kanadje (Apex Corp)** — `abhishek@apexcorp.com` (Password: `client123`)
-5. **Neha Kulkarni (Startuply)** — `neha@startuply.io` (Password: `client123`)
+| Path | Access | Description |
+|---|---|---|
+| `/` | Public | Hero landing page with live interactive score simulator |
+| `/login` | Public | Sign in with 1-click demo logins & failed attempt lockout protection |
+| `/register` | Public | Customer registration with password strength meter (forces Regular customer) |
+| `/change-password` | Authenticated | Password change with current verification & strength meter |
+| `/customer/new` | Customer | Submit ticket with character counter & 3 quick example presets |
+| `/customer/tickets` | Customer | Table of customer's own tickets with status and priority badges |
+| `/customer/tickets/:id` | Customer | Ticket workspace, SLA target, and conversation thread with reply box |
+| `/dashboard` | Agent, Admin | Live priority queue, explainable AI modal, and admin controls |
