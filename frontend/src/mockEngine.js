@@ -657,6 +657,25 @@ export async function handleMockRequest(endpoint, options = {}) {
     }
   }
 
+  // 18.1 TEST GEMINI CONNECTION
+  if (pathname === '/admin/test-gemini' && method === 'POST') {
+    const key = body.gemini_api_key;
+    if (!key || !key.trim()) throw new Error('Gemini API key is required');
+    return {
+      status: 'success',
+      message: 'Successfully connected to Google Gemini AI (gemini-2.5-flash)!',
+      test_evaluation: {
+        priority_score: 88,
+        urgency_score: 95.0,
+        frustration_score: 85.0,
+        assigned_tier: 'Critical',
+        key_issue: 'Critical production checkout outage causing immediate revenue failure.',
+        routing_reason: 'Direct AI LLM verified production downtime with severe business impact.',
+        suggested_solution: 'Our technical infrastructure team has traced the gateway timeout and is rolling out the hotfix.'
+      }
+    };
+  }
+
   // 19. AUDIT LOGS
   if (pathname === '/admin/audit-logs') {
     return db.audit_logs;

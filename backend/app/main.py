@@ -1079,6 +1079,35 @@ async def save_system_settings(
         "weights": CURRENT_WEIGHTS.dict()
     }
 
+@app.post("/api/admin/test-gemini")
+def test_gemini_connection(
+    req: Dict[str, Any],
+    current_user: Dict[str, Any] = Depends(require_role("admin"))
+):
+    key = req.get("gemini_api_key", "").strip()
+    from .gemini_engine import get_gemini_api_key, set_gemini_api_key, call_gemini_triage
+    if not key:
+        key = get_gemini_api_key()
+    if not key:
+        raise HTTPException(status_code=400, detail="Gemini API Key is missing. Please provide a key.")
+    
+    set_gemini_api_key(key)
+    res = call_gemini_triage(
+        "Critical Production DB Outage",
+        "Payment service is failing with 500 error and checkout is completely down for all users.",
+        "VIP",
+        "Technical Support"
+    )
+    if res and "priority_score" in res:
+        return {
+            "status": "success",
+            "message": f"Successfully connected to {res.get('ai_engine', 'Google Gemini AI')}!",
+            "test_evaluation": res
+        }
+    else:
+        raise HTTPException(status_code=502, detail="Failed to connect to Google Gemini API. Please check your API key or network.")
+
+
 @app.post("/api/admin/reset-demo-data")
 async def reset_demo_data_endpoint(current_user: Dict[str, Any] = Depends(require_role("admin"))):
     reset_demo_database(current_user["name"])

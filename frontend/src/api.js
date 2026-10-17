@@ -265,6 +265,13 @@ export async function saveSystemSettings(settingsData) {
   });
 }
 
+export async function testGeminiConnection(apiKey) {
+  return request('/admin/test-gemini', {
+    method: 'POST',
+    body: JSON.stringify({ gemini_api_key: apiKey })
+  });
+}
+
 export async function resetDemoDatabase() {
   return request('/admin/reset-demo-data', {
     method: 'POST'

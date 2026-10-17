@@ -118,6 +118,56 @@ def build_explainability_and_route(
     kb_match: Optional[Dict[str, Any]] = None,
     weights = CURRENT_WEIGHTS
 ) -> ExplainabilityBreakdown:
+    # 1. प्रथम थेट Google Gemini AI (LLM) कडे विचारणा (Direct Generative AI Triage)
+    try:
+        from .gemini_engine import call_gemini_triage
+        gemini_result = call_gemini_triage(subject, description, customer_type)
+        if gemini_result and "priority_score" in gemini_result:
+            p_score = int(gemini_result.get("priority_score", 50))
+            a_tier = gemini_result.get("assigned_tier") or ("Critical" if p_score >= weights.critical_threshold else "Standard" if p_score >= weights.standard_threshold else "Routine")
+            r_reason = gemini_result.get("routing_reason") or "Evaluated by Direct AI engine."
+            urg = float(gemini_result.get("urgency_score", 50.0))
+            frust = float(gemini_result.get("frustration_score", 50.0))
+            suggested = gemini_result.get("suggested_solution", "")
+            key_issue = gemini_result.get("key_issue", "")
+
+            gemini_factors = [
+                ExplainabilityItem(
+                    factor="Google Gemini AI Decision",
+                    score=float(p_score),
+                    weight=100.0,
+                    contribution=float(p_score),
+                    detail=f"Direct LLM Evaluation: {key_issue}" if key_issue else f"Autonomous Triage ({gemini_result.get('ai_engine', 'Gemini AI')})"
+                ),
+                ExplainabilityItem(
+                    factor="Technical Urgency (Gemini)",
+                    score=urg,
+                    weight=40.0,
+                    contribution=round(urg * 0.4, 1),
+                    detail=f"Assessed urgency: {urg}/100"
+                ),
+                ExplainabilityItem(
+                    factor="Customer Distress (Gemini)",
+                    score=frust,
+                    weight=40.0,
+                    contribution=round(frust * 0.4, 1),
+                    detail=f"Detected sentiment index: {frust}/100"
+                )
+            ]
+            summary_text = f"⚡ Direct Gemini AI Analysis: {r_reason}"
+            if suggested:
+                summary_text += f" | AI Suggested Reply: {suggested}"
+
+            return ExplainabilityBreakdown(
+                total_priority_score=p_score,
+                assigned_tier=a_tier,
+                factors=gemini_factors,
+                summary=summary_text
+            )
+    except Exception as e:
+        # Gemini उपलब्ध नसल्यास स्थानिक इंजिनवर सुरक्षितपणे स्विच होते
+        pass
+
     full_text = f"{subject}\n{description}"
     
     frustration, compound, frust_kws = analyze_sentiment_and_frustration(full_text)

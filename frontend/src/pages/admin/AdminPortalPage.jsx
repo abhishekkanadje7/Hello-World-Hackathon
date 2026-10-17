@@ -15,6 +15,7 @@ import {
   testAdminFaqMatcher,
   fetchSystemSettings,
   saveSystemSettings,
+  testGeminiConnection,
   resetDemoDatabase,
   fetchAuditLogs
 } from '../../api';
@@ -68,6 +69,8 @@ export default function AdminPortalPage() {
   const [settings, setSettings] = useState(null);
   const [loadingSettings, setLoadingSettings] = useState(false);
   const [savingSettings, setSavingSettings] = useState(false);
+  const [testingGemini, setTestingGemini] = useState(false);
+  const [geminiTestResult, setGeminiTestResult] = useState(null);
 
   // 6. Audit Log data
   const [auditLogs, setAuditLogs] = useState([]);
@@ -329,6 +332,26 @@ export default function AdminPortalPage() {
       showNotification(err.message, true);
     } finally {
       setSavingSettings(false);
+    }
+  };
+
+  // Test Direct Gemini AI Connection
+  const handleTestGemini = async () => {
+    const key = (settings?.gemini_api_key || '').trim();
+    if (!key) {
+      showNotification('Please enter a Gemini API Key to test.', true);
+      return;
+    }
+    setTestingGemini(true);
+    setGeminiTestResult(null);
+    try {
+      const res = await testGeminiConnection(key);
+      setGeminiTestResult(res);
+      showNotification(res.message || 'Successfully connected to Google Gemini AI!');
+    } catch (err) {
+      showNotification(err.message || 'Gemini AI test failed. Please verify API key.', true);
+    } finally {
+      setTestingGemini(false);
     }
   };
 
@@ -1128,9 +1151,70 @@ export default function AdminPortalPage() {
               <div className="py-20 text-center text-slate-400">Loading settings...</div>
             ) : settings ? (
               <form onSubmit={handleSaveSettings} className="space-y-6 max-w-3xl">
+                {/* 0. Direct Google Gemini AI Autonomous Decision Engine */}
+                <div className="p-6 rounded-2xl bg-gradient-to-br from-blue-950/40 via-slate-900 to-slate-950 border border-blue-500/30 shadow-md space-y-4">
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <div className="inline-flex items-center space-x-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-blue-500/20 text-blue-300 border border-blue-500/30 uppercase tracking-wider mb-1">
+                        <span>Generative AI Engine</span>
+                      </div>
+                      <h3 className="text-sm font-bold text-white flex items-center space-x-2">
+                        <span>Direct Google Gemini AI Autonomous Triage</span>
+                      </h3>
+                      <p className="text-xs text-slate-400 mt-1 leading-relaxed">
+                        When configured, tickets are read and triaged directly by Google Gemini LLM with complete human contextual understanding, tone detection, and automated solution drafts.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-xs font-semibold text-slate-300 block mb-1.5">
+                      Google Gemini API Key
+                    </label>
+                    <div className="flex flex-col sm:flex-row gap-2">
+                      <input
+                        type="password"
+                        placeholder="Paste your Gemini API Key (AIzaSy...)"
+                        value={settings.gemini_api_key || ''}
+                        onChange={(e) => setSettings({ ...settings, gemini_api_key: e.target.value })}
+                        className="flex-1 rounded-xl bg-slate-950 border border-slate-800 px-3.5 py-2 text-xs text-white focus:outline-none focus:border-blue-500 font-mono"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleTestGemini}
+                        disabled={testingGemini || !(settings.gemini_api_key || '').trim()}
+                        className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold disabled:opacity-40 transition-all flex items-center justify-center space-x-1.5 shadow-sm"
+                      >
+                        {testingGemini ? <span>Testing AI...</span> : <span>Test AI Connection</span>}
+                      </button>
+                    </div>
+                    <p className="text-[11px] text-slate-500 mt-1.5">
+                      🔒 Key is stored securely. If omitted or offline, TriageX automatically falls back to our high-precision local NLP engine without disruption.
+                    </p>
+                  </div>
+
+                  {geminiTestResult && (
+                    <div className="p-3.5 bg-blue-950/60 border border-blue-500/40 rounded-xl text-xs text-blue-200 space-y-2 animate-fade-in">
+                      <div className="font-bold text-emerald-400 flex items-center space-x-1.5">
+                        <span>✓</span>
+                        <span>{geminiTestResult.message}</span>
+                      </div>
+                      {geminiTestResult.test_evaluation && (
+                        <div className="grid grid-cols-2 gap-2 text-[11px] font-mono text-slate-300 pt-1 border-t border-blue-900/40">
+                          <div>Priority: <strong className="text-blue-300">{geminiTestResult.test_evaluation.priority_score}/100</strong></div>
+                          <div>Tier: <strong className="text-amber-300">{geminiTestResult.test_evaluation.assigned_tier}</strong></div>
+                          <div className="col-span-2 text-slate-400 font-sans italic text-[11px] mt-0.5">
+                            "{geminiTestResult.test_evaluation.routing_reason}"
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+
                 {/* Weights Sliders Card */}
                 <div className="p-6 rounded-2xl bg-slate-900/60 border border-slate-800/80 shadow-md space-y-4">
-                  <h3 className="text-sm font-bold text-white mb-2">Priority Scoring Model Weights</h3>
+                  <h3 className="text-sm font-bold text-white mb-2">Priority Scoring Model Weights (Local Fallback)</h3>
                   <div>
                     <div className="flex justify-between text-xs mb-1">
                       <span className="text-slate-300">Frustration Weight</span>
