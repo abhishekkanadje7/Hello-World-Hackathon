@@ -1179,3 +1179,35 @@ async def websocket_endpoint(websocket: WebSocket):
         ws_manager.disconnect(websocket)
     except Exception:
         ws_manager.disconnect(websocket)
+
+
+# =============================================================================
+# SERVE COMPILED FRONTEND SPA (RENDER & CLOUD HOSTING)
+# कमेंट: रेंडर (Render.com) वर एकच फुलस्टॅक सर्व्हिस चालवण्यासाठी Frontend डिस्ट फाइल्स माउंट करणे.
+# /api/* आणि /ws सोडून बाकी सर्व रूट्स थेट React ॲप उघडतील.
+# =============================================================================
+import os
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
+
+frontend_dist = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "frontend", "dist"))
+if os.path.exists(frontend_dist):
+    assets_dir = os.path.join(frontend_dist, "assets")
+    if os.path.exists(assets_dir):
+        app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
+
+    @app.get("/{full_path:path}")
+    async def serve_spa_frontend(full_path: str):
+        # Do not catch API, WS, docs, or schema paths
+        if full_path.startswith("api") or full_path.startswith("ws") or full_path in ["docs", "redoc", "openapi.json"]:
+            raise HTTPException(status_code=404, detail="API route not found.")
+        
+        target_file = os.path.join(frontend_dist, full_path)
+        if os.path.isfile(target_file):
+            return FileResponse(target_file)
+            
+        index_file = os.path.join(frontend_dist, "index.html")
+        if os.path.exists(index_file):
+            return FileResponse(index_file)
+        raise HTTPException(status_code=404, detail="Frontend build index.html not found.")
+

@@ -1,0 +1,17 @@
+# Render Deployment Blueprint
+# Docs: https://render.com/docs/blueprint-spec
+services:
+  - type: web
+    name: triagex-support-router
+    env: python
+    region: oregon
+    plan: free
+    branch: main
+    buildCommand: "./build.sh"
+    startCommand: "uvicorn backend.app.main:app --host 0.0.0.0 --port $PORT"
+    healthCheckPath: "/api/health"
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.10.12
+      - key: NODE_VERSION
+        value: 20.10.0
