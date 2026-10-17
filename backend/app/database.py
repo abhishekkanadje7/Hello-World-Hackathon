@@ -7,7 +7,12 @@ from typing import List, Dict, Any, Optional
 from .config import ADMIN_EMAIL, ADMIN_PASSWORD
 from .auth import hash_password
 
-DB_PATH = os.path.join(os.path.dirname(__file__), "..", "triagex.db")
+DB_PATH = os.environ.get("DATABASE_PATH") or os.path.join(os.path.dirname(__file__), "..", "triagex.db")
+if os.path.dirname(DB_PATH):
+    try:
+        os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
+    except Exception:
+        pass
 
 def get_connection():
     conn = sqlite3.connect(DB_PATH, timeout=20.0)
