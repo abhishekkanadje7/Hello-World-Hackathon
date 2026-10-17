@@ -11,6 +11,9 @@ import NewTicketPage from './pages/customer/NewTicketPage';
 import MyTicketsPage from './pages/customer/MyTicketsPage';
 import TicketDetailPage from './pages/customer/TicketDetailPage';
 import DashboardPage from './pages/DashboardPage';
+import AgentQueuePage from './pages/agent/AgentQueuePage';
+import AgentTicketDetailPage from './pages/agent/AgentTicketDetailPage';
+import AdminPortalPage from './pages/admin/AdminPortalPage';
 import { initWebSocket } from './api';
 
 function AppContent() {
@@ -75,7 +78,35 @@ function AppContent() {
             } 
           />
 
-          {/* Agent & Admin Dashboard Route */}
+          {/* Agent Portal Routes */}
+          <Route 
+            path="/agent" 
+            element={
+              <ProtectedRoute allowedRoles={['agent', 'admin']}>
+                <AgentQueuePage />
+              </ProtectedRoute>
+            } 
+          />
+          <Route 
+            path="/agent/tickets/:id" 
+            element={
+              <ProtectedRoute allowedRoles={['agent', 'admin']}>
+                <AgentTicketDetailPage />
+              </ProtectedRoute>
+            } 
+          />
+
+          {/* Admin Portal Route */}
+          <Route 
+            path="/admin" 
+            element={
+              <ProtectedRoute allowedRoles={['admin']}>
+                <AdminPortalPage />
+              </ProtectedRoute>
+            } 
+          />
+
+          {/* Live Simulator & Dashboard Route */}
           <Route 
             path="/dashboard" 
             element={

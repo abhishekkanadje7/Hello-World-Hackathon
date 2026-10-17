@@ -1,4 +1,5 @@
 import uuid
+import json
 from datetime import datetime, timedelta
 from typing import List, Optional, Dict, Any
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Depends, status
@@ -20,7 +21,9 @@ from .database import (
     get_tickets_for_user, get_ticket_by_id, insert_ticket,
     get_replies_for_ticket, insert_ticket_reply, update_ticket_status,
     get_audit_logs, recalculate_all_tickets_scores, calculate_sla_due,
-    get_connection
+    get_connection, get_all_faqs, get_faq_by_id, insert_faq, update_faq,
+    delete_faq, get_all_settings, set_setting, get_all_users, create_agent_user,
+    update_user_profile, admin_reset_user_password, reset_demo_database
 )
 from .nlp_engine import (
     analyze_sentiment_and_frustration, analyze_urgency,
@@ -159,6 +162,8 @@ def login(req: LoginRequest):
     })
     
     safe_user = {k: v for k, v in user.items() if k != "password_hash"}
+    safe_user["must_change_password"] = bool(safe_user.get("must_change_password", 0))
+    safe_user["is_active"] = bool(safe_user.get("is_active", 1))
     return {
         "access_token": token,
         "token_type": "bearer",
@@ -193,11 +198,24 @@ def change_password(
 @app.get("/api/tickets")
 def list_tickets(
     status_filter: Optional[str] = None,
+    tier_filter: Optional[str] = None,
+    search: Optional[str] = None,
     current_user: Dict[str, Any] = Depends(get_current_user)
 ):
     tickets = get_tickets_for_user(current_user)
     if status_filter:
         tickets = [t for t in tickets if t["status"].lower() == status_filter.lower()]
+    if tier_filter:
+        tickets = [t for t in tickets if t["assigned_tier"].lower() == tier_filter.lower()]
+    if search:
+        s_lower = search.lower().strip()
+        tickets = [
+            t for t in tickets if
+            s_lower in t["ticket_number"].lower() or
+            s_lower in t["subject"].lower() or
+            s_lower in t["customer_name"].lower() or
+            s_lower in t["customer_email"].lower()
+        ]
     return tickets
 
 @app.get("/api/tickets/{ticket_id}")
@@ -438,6 +456,136 @@ async def update_status(
     await ws_manager.broadcast("TICKET_UPDATED", updated)
     return updated
 
+# --- AGENT ACTIONS: CLAIM & RELEASE ---
+
+@app.post("/api/tickets/{ticket_id}/claim")
+async def claim_ticket(
+    ticket_id: str,
+    current_user: Dict[str, Any] = Depends(require_role("agent", "admin"))
+):
+    ticket = get_ticket_by_id(ticket_id)
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+        
+    # Check if already assigned
+    if ticket.get("assigned_agent_id") and ticket["assigned_agent_id"] != current_user["id"]:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Ticket is already claimed by {ticket.get('assigned_agent_name', 'another agent')}."
+        )
+        
+    # Check agent tier compatibility
+    if current_user.get("role") == "agent":
+        agent_level = current_user.get("agent_level", "Standard")
+        if agent_level == "Standard" and ticket["assigned_tier"] == "Critical":
+            raise HTTPException(
+                status_code=403,
+                detail="Standard agents cannot claim Critical tier tickets. Requires Senior Agent escalation."
+            )
+            
+    updated = update_ticket_status(
+        ticket_id=ticket_id,
+        status="In Progress",
+        assigned_agent_id=current_user["id"],
+        assigned_agent_name=current_user["name"],
+        note=f"Claimed by {current_user['name']}"
+    )
+    
+    await ws_manager.broadcast("TICKET_UPDATED", updated)
+    return updated
+
+@app.post("/api/tickets/{ticket_id}/release")
+async def release_ticket(
+    ticket_id: str,
+    current_user: Dict[str, Any] = Depends(require_role("agent", "admin"))
+):
+    ticket = get_ticket_by_id(ticket_id)
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+        
+    # Only the assigned agent or an admin can release
+    if current_user.get("role") == "agent" and ticket.get("assigned_agent_id") != current_user["id"]:
+        raise HTTPException(status_code=403, detail="You can only release tickets currently assigned to you.")
+        
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+    UPDATE tickets 
+    SET assigned_agent_id = NULL, assigned_agent_name = NULL, status = 'Open' 
+    WHERE id = ?
+    """, (ticket_id,))
+    
+    cursor.execute("""
+    INSERT INTO audit_logs (ticket_id, action, details, performed_by, timestamp)
+    VALUES (?, ?, ?, ?, ?)
+    """, (
+        ticket_id,
+        "TICKET_RELEASED",
+        f"Ticket released back to unassigned queue by {current_user['name']}",
+        current_user["name"],
+        datetime.utcnow().isoformat() + "Z"
+    ))
+    conn.commit()
+    conn.close()
+    
+    updated = get_ticket_by_id(ticket_id)
+    await ws_manager.broadcast("TICKET_UPDATED", updated)
+    return updated
+
+@app.get("/api/agent/stats")
+def get_agent_stats(current_user: Dict[str, Any] = Depends(require_role("agent", "admin"))):
+    agent_id = current_user["id"]
+    agent_level = current_user.get("agent_level", "Standard")
+    is_admin = (current_user.get("role") == "admin")
+    
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM tickets")
+    all_tickets = [dict(r) for r in cursor.fetchall()]
+    conn.close()
+    
+    now_iso = datetime.utcnow().isoformat() + "Z"
+    today_str = datetime.utcnow().strftime("%Y-%m-%d")
+    
+    my_open = [
+        t for t in all_tickets 
+        if t.get("assigned_agent_id") == agent_id and t["status"] in ["Open", "In Progress"]
+    ]
+    
+    if is_admin:
+        unassigned_in_tier = [t for t in all_tickets if not t.get("assigned_agent_id") and t["status"] == "Open"]
+    elif agent_level == "Senior":
+        unassigned_in_tier = [
+            t for t in all_tickets 
+            if not t.get("assigned_agent_id") and t["status"] == "Open" and t["assigned_tier"] == "Critical"
+        ]
+    else:
+        unassigned_in_tier = [
+            t for t in all_tickets 
+            if not t.get("assigned_agent_id") and t["status"] == "Open" and t["assigned_tier"] in ["Standard", "Routine"]
+        ]
+        
+    overdue_sla = [
+        t for t in all_tickets 
+        if t["status"] != "Resolved" and t.get("sla_due_at") and t["sla_due_at"] < now_iso and
+        (is_admin or (agent_level == "Senior" and t["assigned_tier"] == "Critical") or (agent_level == "Standard" and t["assigned_tier"] in ["Standard", "Routine"]) or t.get("assigned_agent_id") == agent_id)
+    ]
+    
+    resolved_today = [
+        t for t in all_tickets 
+        if t["status"] == "Resolved" and t.get("resolved_at") and t["resolved_at"].startswith(today_str) and
+        (is_admin or t.get("assigned_agent_id") == agent_id)
+    ]
+    
+    return {
+        "my_open_count": len(my_open),
+        "unassigned_in_tier_count": len(unassigned_in_tier),
+        "overdue_sla_count": len(overdue_sla),
+        "resolved_today_count": len(resolved_today),
+        "agent_level": agent_level,
+        "is_admin": is_admin
+    }
+
 # --- STATS & ADMIN (WEIGHTS) ---
 
 @app.get("/api/stats")
@@ -505,7 +653,343 @@ def list_audit_logs(current_user: Dict[str, Any] = Depends(require_role("admin")
 
 @app.get("/api/kb/articles")
 def list_kb_articles():
-    return DEFAULT_KB_ARTICLES
+    from .kb_engine import get_active_kb_articles
+    return get_active_kb_articles()
+
+# --- ADMIN PORTAL COMPREHENSIVE ENDPOINTS ---
+
+@app.get("/api/admin/analytics")
+def get_admin_analytics(current_user: Dict[str, Any] = Depends(require_role("admin"))):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM tickets")
+    tickets = [dict(r) for r in cursor.fetchall()]
+    
+    cursor.execute("SELECT id, name, role, agent_level, is_active FROM users")
+    users = [dict(r) for r in cursor.fetchall()]
+    conn.close()
+    
+    total = len(tickets)
+    now_iso = datetime.utcnow().isoformat() + "Z"
+    
+    # 1. Tier Distribution
+    tier_counts = {"Critical": 0, "Standard": 0, "Routine": 0}
+    for t in tickets:
+        tier = t.get("assigned_tier", "Standard")
+        tier_counts[tier] = tier_counts.get(tier, 0) + 1
+        
+    tier_pie = [
+        {"name": "Critical", "value": tier_counts["Critical"], "color": "#ef4444"},
+        {"name": "Standard", "value": tier_counts["Standard"], "color": "#3b82f6"},
+        {"name": "Routine", "value": tier_counts["Routine"], "color": "#10b981"}
+    ]
+    
+    # 2. Status Distribution
+    status_counts = {"Open": 0, "In Progress": 0, "Resolved": 0}
+    for t in tickets:
+        s = t.get("status", "Open")
+        status_counts[s] = status_counts.get(s, 0) + 1
+        
+    # 3. Sentiment & Frustration Buckets
+    sentiment_buckets = [
+        {"name": "Very Negative (Hostile)", "count": 0, "color": "#ef4444"},
+        {"name": "Frustrated", "count": 0, "color": "#f97316"},
+        {"name": "Neutral / Inquiring", "count": 0, "color": "#eab308"},
+        {"name": "Positive / Calm", "count": 0, "color": "#10b981"}
+    ]
+    
+    for t in tickets:
+        expl = json.loads(t["explainability_json"]) if t.get("explainability_json") else {}
+        comp = expl.get("sentiment_compound", 0.0)
+        if comp <= -0.5:
+            sentiment_buckets[0]["count"] += 1
+        elif comp < 0:
+            sentiment_buckets[1]["count"] += 1
+        elif comp < 0.4:
+            sentiment_buckets[2]["count"] += 1
+        else:
+            sentiment_buckets[3]["count"] += 1
+            
+    # 4. Agent Workload
+    agents = [u for u in users if u["role"] == "agent"]
+    agent_workload = []
+    for a in agents:
+        assigned = [t for t in tickets if t.get("assigned_agent_id") == a["id"]]
+        resolved = [t for t in assigned if t["status"] == "Resolved"]
+        in_prog = [t for t in assigned if t["status"] in ["Open", "In Progress"]]
+        agent_workload.append({
+            "agent_id": a["id"],
+            "agent_name": a["name"],
+            "agent_level": a.get("agent_level", "Standard"),
+            "active_tickets": len(in_prog),
+            "resolved_tickets": len(resolved),
+            "total_assigned": len(assigned)
+        })
+        
+    # 5. Tickets Per Day (Last 7 days mock-spread for trend line)
+    day_counts = {}
+    for i in range(6, -1, -1):
+        d_str = (datetime.utcnow() - timedelta(days=i)).strftime("%b %d")
+        day_counts[d_str] = 0
+        
+    for t in tickets:
+        try:
+            created_dt = datetime.fromisoformat(t["created_at"].replace("Z", ""))
+            d_str = created_dt.strftime("%b %d")
+            if d_str in day_counts:
+                day_counts[d_str] += 1
+        except Exception:
+            pass
+            
+    tickets_trend = [{"date": k, "count": v} for k, v in day_counts.items()]
+    
+    # 6. Overall Metrics
+    avg_score = round(sum(t["priority_score"] for t in tickets) / total, 1) if total > 0 else 0
+    overdue_count = sum(1 for t in tickets if t["status"] != "Resolved" and t.get("sla_due_at") and t["sla_due_at"] < now_iso)
+    sla_compliance_rate = round(((total - overdue_count) / total * 100), 1) if total > 0 else 100.0
+    kb_deflection_rate = round((tier_counts["Routine"] / total * 100), 1) if total > 0 else 0.0
+
+    return {
+        "total_tickets": total,
+        "open_tickets": status_counts["Open"] + status_counts["In Progress"],
+        "resolved_tickets": status_counts["Resolved"],
+        "critical_tickets": tier_counts["Critical"],
+        "overdue_sla_count": overdue_count,
+        "sla_compliance_rate": sla_compliance_rate,
+        "kb_deflection_rate": kb_deflection_rate,
+        "average_priority_score": avg_score,
+        "tier_distribution": tier_pie,
+        "sentiment_distribution": sentiment_buckets,
+        "agent_workload": agent_workload,
+        "tickets_trend": tickets_trend
+    }
+
+@app.get("/api/admin/tickets/export-csv")
+def export_tickets_csv(current_user: Dict[str, Any] = Depends(require_role("admin"))):
+    import csv
+    import io
+    from fastapi.responses import Response
+    
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM tickets ORDER BY priority_score DESC, created_at DESC")
+    tickets = [dict(r) for r in cursor.fetchall()]
+    conn.close()
+    
+    output = io.StringIO()
+    writer = csv.writer(output)
+    
+    writer.writerow([
+        "Ticket Number", "Subject", "Customer Name", "Customer Email", "Customer Type",
+        "Category", "Channel", "Status", "Priority Score", "Assigned Tier",
+        "Assigned Agent", "Routing Reason", "SLA Due At", "Created At", "Resolved At"
+    ])
+    
+    for t in tickets:
+        writer.writerow([
+            t.get("ticket_number", ""),
+            t.get("subject", ""),
+            t.get("customer_name", ""),
+            t.get("customer_email", ""),
+            t.get("customer_type", ""),
+            t.get("category", ""),
+            t.get("channel", ""),
+            t.get("status", ""),
+            t.get("priority_score", 0),
+            t.get("assigned_tier", ""),
+            t.get("assigned_agent_name", "Unassigned"),
+            t.get("routing_reason", ""),
+            t.get("sla_due_at", ""),
+            t.get("created_at", ""),
+            t.get("resolved_at", "")
+        ])
+        
+    return Response(
+        content=output.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=triagex_tickets_export.csv"}
+    )
+
+# --- USER MANAGEMENT ---
+
+@app.get("/api/admin/users")
+def list_admin_users(current_user: Dict[str, Any] = Depends(require_role("admin"))):
+    return get_all_users()
+
+@app.post("/api/admin/agents")
+async def create_agent(
+    req: Dict[str, Any],
+    current_user: Dict[str, Any] = Depends(require_role("admin"))
+):
+    name = req.get("name", "").strip()
+    email = req.get("email", "").strip().lower()
+    agent_level = req.get("agent_level", "Standard")
+    
+    if not name or not email:
+        raise HTTPException(status_code=400, detail="Name and email are required.")
+        
+    if get_user_by_email(email):
+        raise HTTPException(status_code=400, detail="A user with this email already exists.")
+        
+    # Generate 12-char secure random temporary password
+    import secrets
+    import string
+    alphabet = string.ascii_letters + string.digits + "@#$%"
+    temp_password = "Ag!" + "".join(secrets.choice(alphabet) for _ in range(9))
+    
+    pw_hash = hash_password(temp_password)
+    new_agent = create_agent_user(name, email, pw_hash, agent_level, current_user["name"])
+    
+    return {
+        "user": new_agent,
+        "temporary_password": temp_password,
+        "message": "Agent account created. Please securely share the temporary password with the agent."
+    }
+
+@app.patch("/api/admin/users/{user_id}")
+async def update_user(
+    user_id: str,
+    req: Dict[str, Any],
+    current_user: Dict[str, Any] = Depends(require_role("admin"))
+):
+    target = get_user_by_id(user_id)
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+        
+    # Admin cannot deactivate self
+    if target["id"] == current_user["id"] and req.get("is_active") is False:
+        raise HTTPException(status_code=400, detail="Administrator cannot deactivate own account.")
+        
+    updated = update_user_profile(user_id, req, current_user["name"])
+    return updated
+
+@app.post("/api/admin/users/{user_id}/reset-password")
+async def reset_user_password(
+    user_id: str,
+    current_user: Dict[str, Any] = Depends(require_role("admin"))
+):
+    target = get_user_by_id(user_id)
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+        
+    import secrets
+    import string
+    alphabet = string.ascii_letters + string.digits + "@#$%"
+    temp_password = "Tx!" + "".join(secrets.choice(alphabet) for _ in range(9))
+    
+    pw_hash = hash_password(temp_password)
+    admin_reset_user_password(user_id, pw_hash, current_user["name"])
+    
+    return {
+        "temporary_password": temp_password,
+        "message": f"Password reset for {target['email']}. User must change password on next login."
+    }
+
+# --- KNOWLEDGE BASE FAQ CRUD & TEST ---
+
+@app.get("/api/admin/faqs")
+def list_admin_faqs(current_user: Dict[str, Any] = Depends(require_role("admin"))):
+    return get_all_faqs(active_only=False)
+
+@app.post("/api/admin/faqs")
+async def create_faq(
+    req: Dict[str, Any],
+    current_user: Dict[str, Any] = Depends(require_role("admin"))
+):
+    title = req.get("title", "").strip()
+    if not title:
+        raise HTTPException(status_code=400, detail="Title is required.")
+    created = insert_faq(req, current_user["name"])
+    return created
+
+@app.patch("/api/admin/faqs/{faq_id}")
+async def update_faq_endpoint(
+    faq_id: str,
+    req: Dict[str, Any],
+    current_user: Dict[str, Any] = Depends(require_role("admin"))
+):
+    updated = update_faq(faq_id, req, current_user["name"])
+    if not updated:
+        raise HTTPException(status_code=404, detail="FAQ not found")
+    return updated
+
+@app.delete("/api/admin/faqs/{faq_id}")
+async def delete_faq_endpoint(
+    faq_id: str,
+    current_user: Dict[str, Any] = Depends(require_role("admin"))
+):
+    success = delete_faq(faq_id, current_user["name"])
+    if not success:
+        raise HTTPException(status_code=404, detail="FAQ not found")
+    return {"message": "FAQ deleted successfully"}
+
+@app.post("/api/admin/faqs/test")
+def test_faq_matcher(
+    req: Dict[str, Any],
+    current_user: Dict[str, Any] = Depends(require_role("admin"))
+):
+    query = req.get("query", "").strip()
+    if not query:
+        raise HTTPException(status_code=400, detail="Query text is required.")
+        
+    match = find_kb_match(query)
+    if match:
+        return {
+            "matched": True,
+            "article": match,
+            "confidence": match.get("confidence", 0.8)
+        }
+    return {
+        "matched": False,
+        "message": "No matching knowledge base article found for this query."
+    }
+
+# --- SETTINGS & SYSTEM CONFIGURATION ---
+
+@app.get("/api/admin/settings")
+def get_system_settings(current_user: Dict[str, Any] = Depends(require_role("admin"))):
+    settings = get_all_settings()
+    settings["active_weights"] = CURRENT_WEIGHTS.dict()
+    return settings
+
+@app.post("/api/admin/settings")
+async def save_system_settings(
+    req: Dict[str, Any],
+    current_user: Dict[str, Any] = Depends(require_role("admin"))
+):
+    global CURRENT_WEIGHTS
+    
+    # Save key-value pairs
+    for k, v in req.items():
+        if k == "active_weights" and isinstance(v, dict):
+            CURRENT_WEIGHTS.frustration_weight = float(v.get("frustration_weight", CURRENT_WEIGHTS.frustration_weight))
+            CURRENT_WEIGHTS.urgency_weight = float(v.get("urgency_weight", CURRENT_WEIGHTS.urgency_weight))
+            CURRENT_WEIGHTS.customer_value_weight = float(v.get("customer_value_weight", CURRENT_WEIGHTS.customer_value_weight))
+            CURRENT_WEIGHTS.critical_threshold = int(v.get("critical_threshold", CURRENT_WEIGHTS.critical_threshold))
+            CURRENT_WEIGHTS.standard_threshold = int(v.get("standard_threshold", CURRENT_WEIGHTS.standard_threshold))
+        else:
+            set_setting(k, str(v), current_user["name"])
+            
+    # Recalculate tickets with current weights
+    count = recalculate_all_tickets_scores(CURRENT_WEIGHTS)
+    
+    await ws_manager.broadcast("SETTINGS_UPDATED", {
+        "settings": get_all_settings(),
+        "weights": CURRENT_WEIGHTS.dict()
+    })
+    
+    return {
+        "message": f"Settings saved and {count} tickets updated.",
+        "settings": get_all_settings(),
+        "weights": CURRENT_WEIGHTS.dict()
+    }
+
+@app.post("/api/admin/reset-demo-data")
+async def reset_demo_data_endpoint(current_user: Dict[str, Any] = Depends(require_role("admin"))):
+    reset_demo_database(current_user["name"])
+    await ws_manager.broadcast("DATABASE_RESET", {"message": "Demo data reset by admin."})
+    return {"message": "Demo database successfully reset to clean demonstration state."}
+
 
 # --- WEBSOCKET ---
 @app.websocket("/ws")

@@ -111,9 +111,24 @@ def init_db():
         value TEXT NOT NULL
     )
     """)
+
+    # 6. FAQs table
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS faqs (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        category TEXT NOT NULL,
+        keywords TEXT NOT NULL,
+        snippet TEXT NOT NULL,
+        full_content TEXT NOT NULL,
+        is_active INTEGER DEFAULT 1,
+        created_at TEXT NOT NULL
+    )
+    """)
     
     conn.commit()
     seed_users_and_tickets(conn)
+    seed_faqs_and_settings(conn)
     conn.close()
 
 def seed_users_and_tickets(conn):
@@ -668,3 +683,331 @@ def recalculate_all_tickets_scores(weights):
     conn.commit()
     conn.close()
     return updated_count
+
+def seed_faqs_and_settings(conn):
+    cursor = conn.cursor()
+    now_iso = datetime.utcnow().isoformat() + "Z"
+    
+    # Check if faqs seeded
+    cursor.execute("SELECT COUNT(*) FROM faqs")
+    if cursor.fetchone()[0] == 0:
+        from .kb_engine import DEFAULT_KB_ARTICLES
+        for art in DEFAULT_KB_ARTICLES:
+            cursor.execute("""
+            INSERT INTO faqs (id, title, category, keywords, snippet, full_content, is_active, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, 1, ?)
+            """, (
+                art["id"],
+                art["title"],
+                art.get("category", "General"),
+                json.dumps(art["keywords"]),
+                art["snippet"],
+                art["full_content"],
+                now_iso
+            ))
+
+    # Initialize settings if empty
+    cursor.execute("SELECT COUNT(*) FROM settings")
+    if cursor.fetchone()[0] == 0:
+        default_settings = {
+            "frustration_weight": "0.40",
+            "urgency_weight": "0.40",
+            "customer_value_weight": "0.20",
+            "critical_threshold": "70",
+            "standard_threshold": "40",
+            "sla_critical_minutes": "15",
+            "sla_standard_hours": "2",
+            "sla_routine_hours": "24",
+            "urgency_keywords_extra": "[\"p1\", \"sev1\", \"blocker\", \"catastrophic\", \"data breach\"]"
+        }
+        for k, v in default_settings.items():
+            cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (k, v))
+            
+    conn.commit()
+
+# --- FAQS CRUD ---
+
+def get_all_faqs(active_only: bool = False) -> List[Dict[str, Any]]:
+    conn = get_connection()
+    cursor = conn.cursor()
+    if active_only:
+        cursor.execute("SELECT * FROM faqs WHERE is_active = 1 ORDER BY created_at DESC")
+    else:
+        cursor.execute("SELECT * FROM faqs ORDER BY created_at DESC")
+    rows = cursor.fetchall()
+    conn.close()
+    result = []
+    for r in rows:
+        item = dict(r)
+        try:
+            item["keywords"] = json.loads(item["keywords"])
+        except Exception:
+            item["keywords"] = [k.strip() for k in item["keywords"].split(",") if k.strip()]
+        result.append(item)
+    return result
+
+def get_faq_by_id(faq_id: str) -> Optional[Dict[str, Any]]:
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM faqs WHERE id = ?", (faq_id,))
+    r = cursor.fetchone()
+    conn.close()
+    if not r:
+        return None
+    item = dict(r)
+    try:
+        item["keywords"] = json.loads(item["keywords"])
+    except Exception:
+        item["keywords"] = [k.strip() for k in item["keywords"].split(",") if k.strip()]
+    return item
+
+def insert_faq(data: Dict[str, Any], performed_by: str) -> Dict[str, Any]:
+    conn = get_connection()
+    cursor = conn.cursor()
+    faq_id = f"kb-{uuid.uuid4().hex[:6]}"
+    now_iso = datetime.utcnow().isoformat() + "Z"
+    kw_json = json.dumps(data.get("keywords", []))
+    
+    cursor.execute("""
+    INSERT INTO faqs (id, title, category, keywords, snippet, full_content, is_active, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    """, (
+        faq_id,
+        data["title"].strip(),
+        data.get("category", "General").strip(),
+        kw_json,
+        data["snippet"].strip(),
+        data["full_content"].strip(),
+        1 if data.get("is_active", True) else 0,
+        now_iso
+    ))
+    
+    cursor.execute("""
+    INSERT INTO audit_logs (ticket_id, action, details, performed_by, timestamp)
+    VALUES (?, ?, ?, ?, ?)
+    """, (None, "FAQ_CREATED", f"Created FAQ '{data['title']}'", performed_by, now_iso))
+    
+    conn.commit()
+    conn.close()
+    return get_faq_by_id(faq_id)
+
+def update_faq(faq_id: str, data: Dict[str, Any], performed_by: str) -> Optional[Dict[str, Any]]:
+    conn = get_connection()
+    cursor = conn.cursor()
+    now_iso = datetime.utcnow().isoformat() + "Z"
+    
+    existing = get_faq_by_id(faq_id)
+    if not existing:
+        conn.close()
+        return None
+        
+    title = data.get("title", existing["title"]).strip()
+    category = data.get("category", existing["category"]).strip()
+    keywords = json.dumps(data.get("keywords", existing["keywords"]))
+    snippet = data.get("snippet", existing["snippet"]).strip()
+    full_content = data.get("full_content", existing["full_content"]).strip()
+    is_active = 1 if data.get("is_active", bool(existing["is_active"])) else 0
+    
+    cursor.execute("""
+    UPDATE faqs 
+    SET title = ?, category = ?, keywords = ?, snippet = ?, full_content = ?, is_active = ?
+    WHERE id = ?
+    """, (title, category, keywords, snippet, full_content, is_active, faq_id))
+    
+    cursor.execute("""
+    INSERT INTO audit_logs (ticket_id, action, details, performed_by, timestamp)
+    VALUES (?, ?, ?, ?, ?)
+    """, (None, "FAQ_UPDATED", f"Updated FAQ '{title}' (active: {is_active})", performed_by, now_iso))
+    
+    conn.commit()
+    conn.close()
+    return get_faq_by_id(faq_id)
+
+def delete_faq(faq_id: str, performed_by: str) -> bool:
+    conn = get_connection()
+    cursor = conn.cursor()
+    now_iso = datetime.utcnow().isoformat() + "Z"
+    cursor.execute("SELECT title FROM faqs WHERE id = ?", (faq_id,))
+    r = cursor.fetchone()
+    if not r:
+        conn.close()
+        return False
+    title = r["title"]
+    cursor.execute("DELETE FROM faqs WHERE id = ?", (faq_id,))
+    cursor.execute("""
+    INSERT INTO audit_logs (ticket_id, action, details, performed_by, timestamp)
+    VALUES (?, ?, ?, ?, ?)
+    """, (None, "FAQ_DELETED", f"Deleted FAQ '{title}'", performed_by, now_iso))
+    conn.commit()
+    conn.close()
+    return True
+
+# --- SETTINGS GET/UPDATE ---
+
+def get_all_settings() -> Dict[str, str]:
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT key, value FROM settings")
+    rows = cursor.fetchall()
+    conn.close()
+    return {r["key"]: r["value"] for r in rows}
+
+def set_setting(key: str, value: str, performed_by: str = "Admin"):
+    conn = get_connection()
+    cursor = conn.cursor()
+    now_iso = datetime.utcnow().isoformat() + "Z"
+    cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (key, str(value)))
+    cursor.execute("""
+    INSERT INTO audit_logs (ticket_id, action, details, performed_by, timestamp)
+    VALUES (?, ?, ?, ?, ?)
+    """, (None, "SETTING_UPDATED", f"Setting '{key}' changed to '{value}'", performed_by, now_iso))
+    conn.commit()
+    conn.close()
+
+# --- USERS & AGENT ADMINISTRATION ---
+
+def get_all_users() -> List[Dict[str, Any]]:
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, name, email, role, agent_level, customer_type, is_active, must_change_password, created_at FROM users ORDER BY created_at DESC")
+    rows = cursor.fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+def create_agent_user(name: str, email: str, password_hash: str, agent_level: str, performed_by: str) -> Dict[str, Any]:
+    conn = get_connection()
+    cursor = conn.cursor()
+    agent_id = f"usr-agent-{uuid.uuid4().hex[:6]}"
+    now_iso = datetime.utcnow().isoformat() + "Z"
+    
+    cursor.execute("""
+    INSERT INTO users (id, name, email, password_hash, role, agent_level, customer_type, is_active, must_change_password, failed_login_attempts, created_at)
+    VALUES (?, ?, ?, ?, 'agent', ?, NULL, 1, 1, 0, ?)
+    """, (agent_id, name.strip(), email.strip().lower(), password_hash, agent_level, now_iso))
+    
+    cursor.execute("""
+    INSERT INTO audit_logs (ticket_id, action, details, performed_by, timestamp)
+    VALUES (?, ?, ?, ?, ?)
+    """, (None, "AGENT_CREATED", f"Created {agent_level} Agent {name} ({email}) with temporary password", performed_by, now_iso))
+    
+    conn.commit()
+    conn.close()
+    return get_user_by_id(agent_id)
+
+def update_user_profile(user_id: str, updates: Dict[str, Any], performed_by: str) -> Optional[Dict[str, Any]]:
+    conn = get_connection()
+    cursor = conn.cursor()
+    now_iso = datetime.utcnow().isoformat() + "Z"
+    
+    existing = get_user_by_id(user_id)
+    if not existing:
+        conn.close()
+        return None
+        
+    name = updates.get("name", existing["name"]).strip()
+    is_active = 1 if updates.get("is_active", bool(existing["is_active"])) else 0
+    agent_level = updates.get("agent_level", existing.get("agent_level"))
+    new_customer_type = updates.get("customer_type", existing.get("customer_type"))
+    old_customer_type = existing.get("customer_type")
+    
+    cursor.execute("""
+    UPDATE users 
+    SET name = ?, is_active = ?, agent_level = ?, customer_type = ?
+    WHERE id = ?
+    """, (name, is_active, agent_level, new_customer_type, user_id))
+    
+    cursor.execute("""
+    INSERT INTO audit_logs (ticket_id, action, details, performed_by, timestamp)
+    VALUES (?, ?, ?, ?, ?)
+    """, (None, "USER_UPDATED", f"Updated user {existing['email']} (Active: {is_active}, Level: {agent_level}, CustType: {new_customer_type})", performed_by, now_iso))
+    
+    conn.commit()
+    conn.close()
+    
+    # If customer type changed, recalculate scores for open tickets belonging to this customer
+    if existing["role"] == "customer" and new_customer_type and new_customer_type != old_customer_type:
+        recalculate_tickets_for_customer(user_id, new_customer_type)
+        
+    return get_user_by_id(user_id)
+
+def recalculate_tickets_for_customer(customer_id: str, new_customer_type: str):
+    from .nlp_engine import build_explainability_and_route
+    from .kb_engine import find_kb_match
+    from .config import CURRENT_WEIGHTS
+    
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, subject, description, status FROM tickets WHERE customer_id = ? AND status != 'Resolved'", (customer_id,))
+    rows = cursor.fetchall()
+    for r in rows:
+        ticket_id = r["id"]
+        subj = r["subject"]
+        desc = r["description"]
+        kb_match = find_kb_match(f"{subj}\n{desc}")
+        expl = build_explainability_and_route(subj, desc, new_customer_type, kb_match, CURRENT_WEIGHTS)
+        
+        cursor.execute("""
+        UPDATE tickets
+        SET customer_type = ?, priority_score = ?, assigned_tier = ?, routing_reason = ?, explainability_json = ?
+        WHERE id = ?
+        """, (
+            new_customer_type,
+            expl.total_priority_score,
+            expl.assigned_tier,
+            expl.summary,
+            json.dumps(expl.dict()),
+            ticket_id
+        ))
+    conn.commit()
+    conn.close()
+
+def admin_reset_user_password(user_id: str, new_hash: str, performed_by: str) -> bool:
+    conn = get_connection()
+    cursor = conn.cursor()
+    now_iso = datetime.utcnow().isoformat() + "Z"
+    cursor.execute("""
+    UPDATE users 
+    SET password_hash = ?, must_change_password = 1, failed_login_attempts = 0, locked_until = NULL 
+    WHERE id = ?
+    """, (new_hash, user_id))
+    
+    cursor.execute("""
+    INSERT INTO audit_logs (ticket_id, action, details, performed_by, timestamp)
+    VALUES (?, ?, ?, ?, ?)
+    """, (None, "ADMIN_PASSWORD_RESET", f"Admin {performed_by} reset password for user {user_id}", performed_by, now_iso))
+    
+    conn.commit()
+    conn.close()
+    return True
+
+# --- RESET DEMO DATA ---
+
+def reset_demo_database(performed_by: str = "Admin"):
+    conn = get_connection()
+    cursor = conn.cursor()
+    now_iso = datetime.utcnow().isoformat() + "Z"
+    
+    # 1. Delete all ticket replies
+    cursor.execute("DELETE FROM ticket_replies")
+    
+    # 2. Delete all tickets
+    cursor.execute("DELETE FROM tickets")
+    
+    # 3. Delete non-admin users
+    cursor.execute("DELETE FROM users WHERE role != 'admin'")
+    
+    # 4. Delete FAQs
+    cursor.execute("DELETE FROM faqs")
+    
+    # Re-seed
+    seed_users_and_tickets(conn)
+    seed_faqs_and_settings(conn)
+    
+    cursor.execute("""
+    INSERT INTO audit_logs (ticket_id, action, details, performed_by, timestamp)
+    VALUES (?, ?, ?, ?, ?)
+    """, (None, "DATABASE_RESET", "Demo database reset to initial pristine state", performed_by, now_iso))
+    
+    conn.commit()
+    conn.close()
+

@@ -27,9 +27,10 @@ async def test_suite():
     
     # 2. Public Registration - Role & Customer Type Enforcement
     # Client sends malicious role="admin" and customer_type="VIP"
+    test_hacker_email = f"hacker.{datetime.utcnow().timestamp()}@test.com"
     reg_req = RegisterRequest(
         name="Test Hacker",
-        email="hacker@test.com",
+        email=test_hacker_email,
         password="Password123",
         role="admin",
         customer_type="VIP"
@@ -41,15 +42,15 @@ async def test_suite():
     print(f"✅ 2. Registration Security: Role forced to '{created_user['role']}', Customer Type forced to '{created_user['customer_type']}'")
     
     # 3. Successful Login
-    login_req = LoginRequest(email="hacker@test.com", password="Password123")
+    login_req = LoginRequest(email=test_hacker_email, password="Password123")
     login_res = login(login_req)
     assert login_res["access_token"] is not None
-    assert login_res["user"]["email"] == "hacker@test.com"
+    assert login_res["user"]["email"] == test_hacker_email
     print("✅ 3. Login: JWT token generated successfully")
     
     # 4. Wrong Password & Generic Error
     try:
-        login(LoginRequest(email="hacker@test.com", password="WrongPassword123"))
+        login(LoginRequest(email=test_hacker_email, password="WrongPassword123"))
         assert False, "Login should have failed!"
     except HTTPException as e:
         assert e.status_code == 401
@@ -59,12 +60,12 @@ async def test_suite():
     # 5. Lockout After 5 Failures
     for i in range(4):
         try:
-            login(LoginRequest(email="hacker@test.com", password="WrongPassword123"))
+            login(LoginRequest(email=test_hacker_email, password="WrongPassword123"))
         except HTTPException:
             pass
     # 5th failure should trigger lockout
     try:
-        login(LoginRequest(email="hacker@test.com", password="WrongPassword123"))
+        login(LoginRequest(email=test_hacker_email, password="WrongPassword123"))
         assert False, "Account should be locked!"
     except HTTPException as e:
         assert e.status_code == 403

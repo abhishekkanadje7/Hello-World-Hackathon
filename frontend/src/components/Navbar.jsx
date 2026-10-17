@@ -120,26 +120,57 @@ export default function Navbar({ wsConnected }) {
               </>
             ) : user.role === 'agent' ? (
               // Agent Role
-              <Link
-                to="/dashboard"
-                className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                  isActive('/dashboard') ? 'bg-[#0070C0] text-white shadow-md' : 'text-slate-300 hover:text-white hover:bg-slate-800'
-                }`}
-              >
-                <Layers className="w-4 h-4" />
-                <span>Agent Queue</span>
-              </Link>
+              <>
+                <Link
+                  to="/agent"
+                  className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                    isActive('/agent') ? 'bg-[#0070C0] text-white shadow-md' : 'text-slate-300 hover:text-white hover:bg-slate-800'
+                  }`}
+                >
+                  <Layers className="w-4 h-4" />
+                  <span>Triage Queue</span>
+                </Link>
+                <Link
+                  to="/dashboard"
+                  className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                    isActive('/dashboard') ? 'bg-[#0070C0] text-white shadow-md' : 'text-slate-300 hover:text-white hover:bg-slate-800'
+                  }`}
+                >
+                  <Sparkles className="w-4 h-4" />
+                  <span>Simulator</span>
+                </Link>
+              </>
             ) : (
               // Admin Role
-              <Link
-                to="/dashboard"
-                className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                  isActive('/dashboard') ? 'bg-[#0070C0] text-white shadow-md' : 'text-slate-300 hover:text-white hover:bg-slate-800'
-                }`}
-              >
-                <Sliders className="w-4 h-4" />
-                <span>Admin Console</span>
-              </Link>
+              <>
+                <Link
+                  to="/admin"
+                  className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                    isActive('/admin') ? 'bg-[#0070C0] text-white shadow-md' : 'text-slate-300 hover:text-white hover:bg-slate-800'
+                  }`}
+                >
+                  <Sliders className="w-4 h-4" />
+                  <span>Admin Console</span>
+                </Link>
+                <Link
+                  to="/agent"
+                  className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                    isActive('/agent') ? 'bg-[#0070C0] text-white shadow-md' : 'text-slate-300 hover:text-white hover:bg-slate-800'
+                  }`}
+                >
+                  <Layers className="w-4 h-4" />
+                  <span>Agent View</span>
+                </Link>
+                <Link
+                  to="/dashboard"
+                  className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                    isActive('/dashboard') ? 'bg-[#0070C0] text-white shadow-md' : 'text-slate-300 hover:text-white hover:bg-slate-800'
+                  }`}
+                >
+                  <Sparkles className="w-4 h-4" />
+                  <span>Simulator</span>
+                </Link>
+              </>
             )}
           </nav>
 

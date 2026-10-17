@@ -145,6 +145,113 @@ export async function fetchStats() {
   return request('/stats');
 }
 
+// --- AGENT PORTAL APIS ---
+
+export async function fetchAgentStats() {
+  return request('/agent/stats');
+}
+
+export async function claimTicket(ticketId) {
+  return request(`/tickets/${ticketId}/claim`, {
+    method: 'POST'
+  });
+}
+
+export async function releaseTicket(ticketId) {
+  return request(`/tickets/${ticketId}/release`, {
+    method: 'POST'
+  });
+}
+
+// --- ADMIN PORTAL APIS ---
+
+export async function fetchAdminAnalytics() {
+  return request('/admin/analytics');
+}
+
+export async function fetchAdminUsers() {
+  return request('/admin/users');
+}
+
+export async function createAdminAgent(agentData) {
+  return request('/admin/agents', {
+    method: 'POST',
+    body: JSON.stringify(agentData)
+  });
+}
+
+export async function updateAdminUser(userId, updates) {
+  return request(`/admin/users/${userId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(updates)
+  });
+}
+
+export async function resetAdminUserPassword(userId) {
+  return request(`/admin/users/${userId}/reset-password`, {
+    method: 'POST'
+  });
+}
+
+export async function fetchAdminFaqs() {
+  return request('/admin/faqs');
+}
+
+export async function createAdminFaq(faqData) {
+  return request('/admin/faqs', {
+    method: 'POST',
+    body: JSON.stringify(faqData)
+  });
+}
+
+export async function updateAdminFaq(faqId, faqData) {
+  return request(`/admin/faqs/${faqId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(faqData)
+  });
+}
+
+export async function deleteAdminFaq(faqId) {
+  return request(`/admin/faqs/${faqId}`, {
+    method: 'DELETE'
+  });
+}
+
+export async function testAdminFaqMatcher(query) {
+  return request('/admin/faqs/test', {
+    method: 'POST',
+    body: JSON.stringify({ query })
+  });
+}
+
+export async function fetchSystemSettings() {
+  return request('/admin/settings');
+}
+
+export async function saveSystemSettings(settingsData) {
+  return request('/admin/settings', {
+    method: 'POST',
+    body: JSON.stringify(settingsData)
+  });
+}
+
+export async function resetDemoDatabase() {
+  return request('/admin/reset-demo-data', {
+    method: 'POST'
+  });
+}
+
+export async function exportTicketsCsv() {
+  const token = getToken();
+  const res = await fetch(`${API_BASE}/admin/tickets/export-csv`, {
+    headers: {
+      Authorization: `Bearer ${token}`
+    }
+  });
+  if (!res.ok) throw new Error('Failed to export CSV');
+  return res.blob();
+}
+
 export async function fetchWeights() {
   return request('/admin/weights');
 }

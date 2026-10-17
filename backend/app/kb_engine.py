@@ -44,6 +44,16 @@ DEFAULT_KB_ARTICLES = [
     }
 ]
 
+def get_active_kb_articles() -> List[Dict[str, Any]]:
+    try:
+        from .database import get_all_faqs
+        faqs = get_all_faqs(active_only=True)
+        if faqs and len(faqs) > 0:
+            return faqs
+    except Exception:
+        pass
+    return DEFAULT_KB_ARTICLES
+
 def find_kb_match(text: str) -> Optional[Dict[str, Any]]:
     """
     Checks if the user's text matches any FAQ with high confidence.
@@ -51,13 +61,25 @@ def find_kb_match(text: str) -> Optional[Dict[str, Any]]:
     text_lower = text.lower()
     best_match = None
     max_score = 0
+    articles = get_active_kb_articles()
     
-    for article in DEFAULT_KB_ARTICLES:
+    for article in articles:
         score = 0
-        for kw in article["keywords"]:
-            if re.search(r'\b' + re.escape(kw) + r'\b', text_lower):
+        keywords = article.get("keywords", [])
+        if isinstance(keywords, str):
+            try:
+                import json
+                keywords = json.loads(keywords)
+            except Exception:
+                keywords = [k.strip() for k in keywords.split(",") if k.strip()]
+                
+        for kw in keywords:
+            kw_clean = str(kw).strip().lower()
+            if not kw_clean:
+                continue
+            if re.search(r'\b' + re.escape(kw_clean) + r'\b', text_lower):
                 score += 2
-            elif kw in text_lower:
+            elif kw_clean in text_lower:
                 score += 1
                 
         if score > max_score and score >= 2:
@@ -75,3 +97,4 @@ def find_kb_match(text: str) -> Optional[Dict[str, Any]]:
         }
         
     return None
+
