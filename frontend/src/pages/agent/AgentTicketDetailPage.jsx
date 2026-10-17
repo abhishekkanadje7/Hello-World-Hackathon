@@ -34,6 +34,10 @@ export default function AgentTicketDetailPage() {
   const [kbArticles, setKbArticles] = useState([]);
   const [showKbModal, setShowKbModal] = useState(false);
 
+  // Canned Replies
+  const [cannedReplies, setCannedReplies] = useState([]);
+  const [showCannedModal, setShowCannedModal] = useState(false);
+
   // Action state
   const [actionLoading, setActionLoading] = useState(false);
 
@@ -52,7 +56,17 @@ export default function AgentTicketDetailPage() {
   useEffect(() => {
     loadTicket();
     fetchKbArticles().then(setKbArticles).catch(() => {});
+    import('../../api').then(mod => mod.fetchCannedReplies().then(setCannedReplies).catch(() => {}));
   }, [id]);
+
+  const handleApplyCanned = (cr) => {
+    let replaced = cr.content
+      .replace(/{{customer_name}}/g, ticket.customer_name || 'Customer')
+      .replace(/{{agent_name}}/g, user?.name || 'Support Agent')
+      .replace(/{{ticket_number}}/g, ticket.ticket_number || '');
+    setReplyText(replaced);
+    setShowCannedModal(false);
+  };
 
   const handleClaim = async () => {
     setActionLoading(true);
@@ -372,6 +386,13 @@ export default function AgentTicketDetailPage() {
                 <div className="flex items-center space-x-3">
                   <button
                     type="button"
+                    onClick={() => setShowCannedModal(true)}
+                    className="text-xs text-purple-400 hover:text-purple-300 flex items-center space-x-1"
+                  >
+                    <span>⚡ Canned Reply</span>
+                  </button>
+                  <button
+                    type="button"
                     onClick={() => setShowKbModal(true)}
                     className="text-xs text-blue-400 hover:text-blue-300 flex items-center space-x-1"
                   >
@@ -592,6 +613,47 @@ export default function AgentTicketDetailPage() {
                   </div>
                   <p className="text-xs text-slate-400 mt-1 line-clamp-2">
                     {art.snippet}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Canned Replies Modal */}
+      {showCannedModal && (
+        <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4 backdrop-blur-sm">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 max-w-2xl w-full shadow-2xl max-h-[85vh] flex flex-col">
+            <div className="flex items-center justify-between pb-4 border-b border-slate-800">
+              <div>
+                <h3 className="text-lg font-bold text-white">Select Canned Response Template</h3>
+                <span className="text-xs text-slate-400">Placeholders like customer name and ticket number will be filled automatically.</span>
+              </div>
+              <button onClick={() => setShowCannedModal(false)} className="text-slate-400 hover:text-white">✕</button>
+            </div>
+            <div className="overflow-y-auto py-4 space-y-3 flex-1 pr-1">
+              {cannedReplies.map(cr => (
+                <div
+                  key={cr.id}
+                  onClick={() => handleApplyCanned(cr)}
+                  className="p-4 rounded-xl bg-slate-950 border border-slate-800/80 hover:border-purple-500/60 transition-colors cursor-pointer group"
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-2">
+                      <span className="font-mono text-xs font-bold text-purple-400 bg-purple-950/80 px-2 py-0.5 rounded border border-purple-800">
+                        /{cr.shortcut}
+                      </span>
+                      <h4 className="text-sm font-semibold text-slate-200 group-hover:text-purple-300">
+                        {cr.title}
+                      </h4>
+                    </div>
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-400">
+                      {cr.category}
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-400 mt-2 line-clamp-2 whitespace-pre-wrap font-sans">
+                    {cr.content}
                   </p>
                 </div>
               ))}

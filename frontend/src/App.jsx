@@ -14,6 +14,7 @@ import DashboardPage from './pages/DashboardPage';
 import AgentQueuePage from './pages/agent/AgentQueuePage';
 import AgentTicketDetailPage from './pages/agent/AgentTicketDetailPage';
 import AdminPortalPage from './pages/admin/AdminPortalPage';
+import ProfilePage from './pages/ProfilePage';
 import { initWebSocket } from './api';
 
 function AppContent() {
@@ -48,6 +49,16 @@ function AppContent() {
             element={
               <ProtectedRoute>
                 <ChangePasswordPage />
+              </ProtectedRoute>
+            } 
+          />
+
+          {/* User Profile Route */}
+          <Route 
+            path="/profile" 
+            element={
+              <ProtectedRoute>
+                <ProfilePage />
               </ProtectedRoute>
             } 
           />

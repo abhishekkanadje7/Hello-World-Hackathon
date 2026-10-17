@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { 
@@ -10,13 +10,50 @@ import {
   User, 
   Key, 
   Sparkles,
-  Sliders
+  Sliders,
+  Bell
 } from 'lucide-react';
+import { fetchNotifications, markNotificationsAsRead } from '../api';
 
 export default function Navbar({ wsConnected }) {
   const { user, logout } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
+
+  const [notifications, setNotifications] = useState([]);
+  const [showNotifications, setShowNotifications] = useState(false);
+  const [theme, setTheme] = useState(() => localStorage.getItem('triagex_theme') || 'dark');
+
+  useEffect(() => {
+    if (user) {
+      fetchNotifications().then(setNotifications).catch(() => {});
+      const interval = setInterval(() => {
+        fetchNotifications().then(setNotifications).catch(() => {});
+      }, 10000);
+      return () => clearInterval(interval);
+    }
+  }, [user]);
+
+  const handleToggleNotifications = async () => {
+    if (!showNotifications && notifications.some(n => !n.is_read)) {
+      await markNotificationsAsRead().catch(() => {});
+      fetchNotifications().then(setNotifications).catch(() => {});
+    }
+    setShowNotifications(!showNotifications);
+  };
+
+  const toggleTheme = () => {
+    const next = theme === 'dark' ? 'light' : 'dark';
+    setTheme(next);
+    localStorage.setItem('triagex_theme', next);
+    if (next === 'light') {
+      document.documentElement.classList.add('light-mode');
+    } else {
+      document.documentElement.classList.remove('light-mode');
+    }
+  };
+
+  const unreadCount = notifications.filter(n => !n.is_read).length;
 
   const handleLogout = () => {
     logout();
@@ -201,6 +238,63 @@ export default function Navbar({ wsConnected }) {
                   </div>
                 </div>
               </div>
+
+              {/* In-App Notifications Bell */}
+              <div className="relative">
+                <button
+                  onClick={handleToggleNotifications}
+                  title="Notifications"
+                  className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-xl transition-colors relative border border-transparent hover:border-slate-700"
+                >
+                  <Bell className="w-4 h-4" />
+                  {unreadCount > 0 && (
+                    <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+                  )}
+                </button>
+
+                {showNotifications && (
+                  <div className="absolute right-0 mt-2 w-80 bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl z-50 overflow-hidden">
+                    <div className="p-3 bg-slate-950/80 border-b border-slate-800 flex items-center justify-between">
+                      <span className="text-xs font-bold text-white uppercase tracking-wider">Notifications</span>
+                      <span className="text-[10px] text-blue-400 font-mono">{notifications.length} recent</span>
+                    </div>
+                    <div className="max-h-72 overflow-y-auto divide-y divide-slate-800/60">
+                      {notifications.length === 0 ? (
+                        <div className="py-8 text-center text-xs text-slate-500">
+                          No notifications yet.
+                        </div>
+                      ) : (
+                        notifications.map(n => (
+                          <div key={n.id} className="p-3 hover:bg-slate-800/40 transition-colors">
+                            <div className="text-xs font-semibold text-slate-200">{n.title}</div>
+                            <div className="text-[11px] text-slate-400 mt-0.5">{n.message}</div>
+                            <div className="text-[9px] text-slate-500 font-mono mt-1">
+                              {new Date(n.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Dark / Light Mode Pill */}
+              <button
+                onClick={toggleTheme}
+                title="Toggle Theme Mode"
+                className="p-2 text-slate-400 hover:text-amber-300 hover:bg-slate-800 rounded-xl transition-colors border border-transparent hover:border-slate-700 text-xs"
+              >
+                {theme === 'dark' ? '🌙' : '☀️'}
+              </button>
+
+              <Link
+                to="/profile"
+                title="My Profile"
+                className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-xl transition-colors border border-transparent hover:border-slate-700"
+              >
+                <User className="w-4 h-4" />
+              </Link>
 
               <Link
                 to="/change-password"

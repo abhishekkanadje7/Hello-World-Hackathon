@@ -23,7 +23,10 @@ from .database import (
     get_audit_logs, recalculate_all_tickets_scores, calculate_sla_due,
     get_connection, get_all_faqs, get_faq_by_id, insert_faq, update_faq,
     delete_faq, get_all_settings, set_setting, get_all_users, create_agent_user,
-    update_user_profile, admin_reset_user_password, reset_demo_database
+    update_user_profile, admin_reset_user_password, reset_demo_database,
+    get_all_canned_replies, insert_canned_reply, delete_canned_reply,
+    create_notification, get_user_notifications, mark_notifications_read,
+    submit_ticket_csat
 )
 from .nlp_engine import (
     analyze_sentiment_and_frustration, analyze_urgency,
@@ -45,6 +48,40 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# --- SLIDING WINDOW RATE LIMITER ---
+RATE_LIMIT_BUCKET: Dict[str, List[float]] = {}
+RATE_LIMIT_WINDOW = 60.0  # 1 minute window
+RATE_LIMIT_MAX_REQUESTS = 120  # generous 120 requests/minute per client IP
+
+from fastapi import Request
+from fastapi.responses import JSONResponse
+
+@app.middleware("http")
+async def rate_limiting_middleware(request: Request, call_next):
+    # Only rate limit /api endpoints, exclude websockets or static
+    if request.url.path.startswith("/api/"):
+        client_ip = request.client.host if request.client else "127.0.0.1"
+        now = datetime.utcnow().timestamp()
+        
+        # Clean timestamps older than window
+        timestamps = RATE_LIMIT_BUCKET.get(client_ip, [])
+        valid_timestamps = [t for t in timestamps if now - t < RATE_LIMIT_WINDOW]
+        
+        if len(valid_timestamps) >= RATE_LIMIT_MAX_REQUESTS:
+            return JSONResponse(
+                status_code=429,
+                content={
+                    "detail": "API rate limit exceeded (120 requests/minute). Please slow down.",
+                    "retry_after_seconds": int(RATE_LIMIT_WINDOW - (now - valid_timestamps[0]))
+                }
+            )
+            
+        valid_timestamps.append(now)
+        RATE_LIMIT_BUCKET[client_ip] = valid_timestamps
+        
+    response = await call_next(request)
+    return response
 
 @app.on_event("startup")
 def startup_event():
@@ -200,6 +237,8 @@ def list_tickets(
     status_filter: Optional[str] = None,
     tier_filter: Optional[str] = None,
     search: Optional[str] = None,
+    page: Optional[int] = None,
+    page_size: Optional[int] = None,
     current_user: Dict[str, Any] = Depends(get_current_user)
 ):
     tickets = get_tickets_for_user(current_user)
@@ -216,6 +255,19 @@ def list_tickets(
             s_lower in t["customer_name"].lower() or
             s_lower in t["customer_email"].lower()
         ]
+        
+    total_count = len(tickets)
+    if page is not None and page_size is not None and page > 0 and page_size > 0:
+        start_idx = (page - 1) * page_size
+        end_idx = start_idx + page_size
+        paginated_items = tickets[start_idx:end_idx]
+        return {
+            "items": paginated_items,
+            "total": total_count,
+            "page": page,
+            "page_size": page_size,
+            "total_pages": max(1, (total_count + page_size - 1) // page_size)
+        }
     return tickets
 
 @app.get("/api/tickets/{ticket_id}")
@@ -362,6 +414,20 @@ async def create_ticket(
             "is_internal": False,
             "created_at": now_iso
         })
+    else:
+        # Create notification for senior agents if Critical
+        if expl.assigned_tier == "Critical":
+            conn = get_connection()
+            cursor = conn.cursor()
+            cursor.execute("SELECT id FROM users WHERE role = 'agent' AND agent_level = 'Senior'")
+            for s_agent in cursor.fetchall():
+                create_notification(
+                    user_id=s_agent["id"],
+                    title=f"🚨 Critical Ticket Escalated ({ticket_number})",
+                    message=f"Critical issue from {customer_name} ({customer_type}): '{req.subject}'",
+                    ticket_id=ticket_id
+                )
+            conn.close()
         
     # Broadcast to open dashboards via WebSocket
     await ws_manager.broadcast("TICKET_CREATED", saved_ticket)
@@ -423,6 +489,26 @@ async def create_reply(
     
     saved_reply = insert_ticket_reply(reply_data)
     
+    # Notify participants
+    if role == "customer":
+        # Notify assigned agent if assigned
+        if ticket.get("assigned_agent_id"):
+            create_notification(
+                user_id=ticket["assigned_agent_id"],
+                title=f"New Customer Reply ({ticket['ticket_number']})",
+                message=f"{current_user['name']} replied: '{req.message[:80]}...'",
+                ticket_id=ticket_id
+            )
+    elif not is_internal:
+        # Agent or admin public reply -> notify customer
+        if ticket.get("customer_id"):
+            create_notification(
+                user_id=ticket["customer_id"],
+                title=f"Support Update on {ticket['ticket_number']}",
+                message=f"{current_user['name']} replied: '{req.message[:80]}...'",
+                ticket_id=ticket_id
+            )
+            
     # Broadcast reply
     await ws_manager.broadcast("REPLY_ADDED", {
         "ticket_id": ticket_id,
@@ -452,6 +538,14 @@ async def update_status(
     )
     if not updated:
         raise HTTPException(status_code=404, detail="Ticket not found")
+        
+    if new_status == "Resolved" and updated.get("customer_id"):
+        create_notification(
+            user_id=updated["customer_id"],
+            title=f"Ticket Resolved ({updated['ticket_number']})",
+            message=f"Your ticket '{updated['subject'][:50]}' has been marked as Resolved. Please let us know your feedback!",
+            ticket_id=ticket_id
+        )
         
     await ws_manager.broadcast("TICKET_UPDATED", updated)
     return updated
@@ -989,6 +1083,88 @@ async def reset_demo_data_endpoint(current_user: Dict[str, Any] = Depends(requir
     reset_demo_database(current_user["name"])
     await ws_manager.broadcast("DATABASE_RESET", {"message": "Demo data reset by admin."})
     return {"message": "Demo database successfully reset to clean demonstration state."}
+
+# --- PROMPT C3: NOTIFICATIONS, CSAT, CANNED REPLIES & PROFILE ---
+
+@app.get("/api/notifications")
+def list_notifications(current_user: Dict[str, Any] = Depends(get_current_user)):
+    return get_user_notifications(current_user["id"])
+
+@app.post("/api/notifications/read")
+def mark_read(current_user: Dict[str, Any] = Depends(get_current_user)):
+    mark_notifications_read(current_user["id"])
+    return {"message": "Notifications marked as read"}
+
+@app.get("/api/canned-replies")
+def list_canned(current_user: Dict[str, Any] = Depends(require_role("agent", "admin"))):
+    return get_all_canned_replies()
+
+@app.post("/api/canned-replies")
+def create_canned(
+    req: Dict[str, Any],
+    current_user: Dict[str, Any] = Depends(require_role("agent", "admin"))
+):
+    sc = req.get("shortcut", "").strip()
+    title = req.get("title", "").strip()
+    content = req.get("content", "").strip()
+    category = req.get("category", "General").strip()
+    if not sc or not title or not content:
+        raise HTTPException(status_code=400, detail="Shortcut, title, and content are required.")
+    return insert_canned_reply(sc, title, category, content)
+
+@app.delete("/api/canned-replies/{canned_id}")
+def delete_canned(
+    canned_id: str,
+    current_user: Dict[str, Any] = Depends(require_role("admin"))
+):
+    success = delete_canned_reply(canned_id)
+    return {"message": "Canned reply deleted", "success": success}
+
+@app.post("/api/tickets/{ticket_id}/csat")
+async def post_csat(
+    ticket_id: str,
+    req: Dict[str, Any],
+    current_user: Dict[str, Any] = Depends(require_role("customer"))
+):
+    if current_user.get("role") != "customer":
+        raise HTTPException(status_code=403, detail="Only customers can submit CSAT ratings.")
+        
+    rating = req.get("rating")
+    feedback = req.get("feedback")
+    if not isinstance(rating, int) or rating < 1 or rating > 5:
+        raise HTTPException(status_code=400, detail="Rating must be an integer between 1 and 5.")
+
+        
+    updated = submit_ticket_csat(ticket_id, rating, feedback, current_user["id"])
+    if not updated:
+        raise HTTPException(status_code=404, detail="Ticket not found or does not belong to you.")
+        
+    await ws_manager.broadcast("CSAT_SUBMITTED", {
+        "ticket_id": ticket_id,
+        "rating": rating,
+        "feedback": feedback
+    })
+    return {"message": "CSAT rating submitted successfully", "ticket": updated}
+
+@app.patch("/api/user/profile")
+def update_profile(
+    req: Dict[str, Any],
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    name = req.get("name", "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Name cannot be empty.")
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("UPDATE users SET name = ? WHERE id = ?", (name, current_user["id"]))
+    cursor.execute("""
+    INSERT INTO audit_logs (ticket_id, action, details, performed_by, timestamp)
+    VALUES (?, ?, ?, ?, ?)
+    """, (None, "PROFILE_UPDATED", f"User updated name to {name}", current_user["id"], datetime.utcnow().isoformat() + "Z"))
+    conn.commit()
+    conn.close()
+    return get_user_by_id(current_user["id"])
+
 
 
 # --- WEBSOCKET ---

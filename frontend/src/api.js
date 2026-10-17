@@ -94,9 +94,13 @@ export async function fetchDemoUsers() {
 
 // --- TICKETS APIS ---
 
-export async function fetchTickets(status = null) {
+export async function fetchTickets({ status = null, tier = null, search = null, page = null, pageSize = null } = {}) {
   const params = new URLSearchParams();
   if (status) params.append('status_filter', status);
+  if (tier) params.append('tier_filter', tier);
+  if (search) params.append('search', search);
+  if (page) params.append('page', page);
+  if (pageSize) params.append('page_size', pageSize);
   return request(`/tickets?${params.toString()}`);
 }
 
@@ -269,6 +273,49 @@ export async function fetchAuditLogs() {
 
 export async function fetchKbArticles() {
   return request('/kb/articles');
+}
+
+// --- PROMPT C3: NOTIFICATIONS, CSAT, CANNED REPLIES & PROFILE ---
+
+export async function fetchNotifications() {
+  return request('/notifications');
+}
+
+export async function markNotificationsAsRead() {
+  return request('/notifications/read', {
+    method: 'POST'
+  });
+}
+
+export async function fetchCannedReplies() {
+  return request('/canned-replies');
+}
+
+export async function createCannedReply(cannedData) {
+  return request('/canned-replies', {
+    method: 'POST',
+    body: JSON.stringify(cannedData)
+  });
+}
+
+export async function deleteCannedReply(cannedId) {
+  return request(`/canned-replies/${cannedId}`, {
+    method: 'DELETE'
+  });
+}
+
+export async function submitCsatRating(ticketId, rating, feedback = '') {
+  return request(`/tickets/${ticketId}/csat`, {
+    method: 'POST',
+    body: JSON.stringify({ rating, feedback })
+  });
+}
+
+export async function updateUserProfile(name) {
+  return request('/user/profile', {
+    method: 'PATCH',
+    body: JSON.stringify({ name })
+  });
 }
 
 export function initWebSocket(onMessage, onOpen, onClose) {

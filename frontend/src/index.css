@@ -38,3 +38,36 @@
 .glow-critical {
   animation: pulse-red 2s infinite ease-in-out;
 }
+
+/* Light mode styles */
+html.light-mode body {
+  background-color: #f8fafc;
+  color: #0f172a;
+}
+
+html.light-mode header,
+html.light-mode aside,
+html.light-mode footer {
+  background-color: #ffffff !important;
+  border-color: #e2e8f0 !important;
+}
+
+html.light-mode .bg-slate-900,
+html.light-mode .bg-slate-950,
+html.light-mode .bg-slate-900\/60,
+html.light-mode .bg-slate-900\/80,
+html.light-mode .bg-slate-900\/90 {
+  background-color: #ffffff !important;
+  color: #1e293b !important;
+}
+
+html.light-mode .text-white {
+  color: #0f172a !important;
+}
+
+html.light-mode .border-slate-800,
+html.light-mode .border-slate-800\/80,
+html.light-mode .border-slate-700 {
+  border-color: #e2e8f0 !important;
+}
+

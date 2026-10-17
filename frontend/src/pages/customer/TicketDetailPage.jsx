@@ -229,6 +229,26 @@ export default function TicketDetailPage() {
           </div>
         )}
 
+        {/* CSAT Rating Widget (If Resolved) */}
+        {ticket.status === 'Resolved' && (
+          <div className="p-5 rounded-2xl bg-amber-950/20 border border-amber-800/40 my-4">
+            <h3 className="text-xs font-bold text-amber-300 uppercase tracking-wider mb-2 flex items-center space-x-1.5">
+              <span>⭐</span>
+              <span>Customer Satisfaction Rating (CSAT)</span>
+            </h3>
+            {ticket.csat_rating ? (
+              <div className="text-xs text-slate-300 flex items-center space-x-2">
+                <span>You rated this ticket:</span>
+                <span className="text-amber-400 font-bold">{'★'.repeat(ticket.csat_rating)}{'☆'.repeat(5 - ticket.csat_rating)}</span>
+                <span className="text-slate-400">({ticket.csat_rating}/5 stars)</span>
+                {ticket.csat_feedback && <span className="italic text-slate-400 font-sans">"{ticket.csat_feedback}"</span>}
+              </div>
+            ) : (
+              <CsatSubmissionForm ticketId={ticket.id} onSubmitted={(updated) => setTicket(updated)} />
+            )}
+          </div>
+        )}
+
         {/* Reply Box */}
         <form onSubmit={handleSendReply} className="pt-4 border-t border-slate-800 space-y-3">
           <label className="text-xs font-semibold text-slate-300 block">
@@ -263,3 +283,63 @@ export default function TicketDetailPage() {
     </div>
   );
 }
+
+function CsatSubmissionForm({ ticketId, onSubmitted }) {
+  const [rating, setRating] = useState(5);
+  const [feedback, setFeedback] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setSubmitting(true);
+    try {
+      const { submitCsatRating } = await import('../../api');
+      const res = await submitCsatRating(ticketId, rating, feedback);
+      if (onSubmitted) onSubmitted(res.ticket);
+    } catch (err) {
+      alert(err.message || 'Failed to submit rating');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-3">
+      <div className="flex items-center space-x-2">
+        <span className="text-xs text-slate-300">Rate your experience:</span>
+        <div className="flex space-x-1">
+          {[1, 2, 3, 4, 5].map(star => (
+            <button
+              type="button"
+              key={star}
+              onClick={() => setRating(star)}
+              className={`text-lg transition-transform hover:scale-125 ${
+                star <= rating ? 'text-amber-400' : 'text-slate-600'
+              }`}
+            >
+              ★
+            </button>
+          ))}
+        </div>
+        <span className="text-xs font-mono font-bold text-amber-300">({rating}/5)</span>
+      </div>
+
+      <input
+        type="text"
+        placeholder="Optional comments or suggestions..."
+        value={feedback}
+        onChange={(e) => setFeedback(e.target.value)}
+        className="w-full p-2.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none focus:border-amber-500"
+      />
+
+      <button
+        type="submit"
+        disabled={submitting}
+        className="px-4 py-1.5 rounded-lg text-xs font-semibold bg-amber-600 hover:bg-amber-500 text-white transition-all disabled:opacity-50"
+      >
+        {submitting ? 'Submitting...' : 'Submit Rating'}
+      </button>
+    </form>
+  );
+}
+

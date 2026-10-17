@@ -23,6 +23,8 @@ export default function MyTicketsPage() {
   const [error, setError] = useState(null);
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [search, setSearch] = useState('');
+  const [page, setPage] = useState(1);
+  const pageSize = 10;
 
   const loadData = async () => {
     setLoading(true);
@@ -153,7 +155,7 @@ export default function MyTicketsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800 text-slate-300">
-                {filteredTickets.map((t) => {
+                {filteredTickets.slice((page - 1) * pageSize, page * pageSize).map((t) => {
                   const isCritical = t.assigned_tier === 'Critical';
                   const isStandard = t.assigned_tier === 'Standard';
 
@@ -210,6 +212,34 @@ export default function MyTicketsPage() {
                 })}
               </tbody>
             </table>
+          </div>
+        )}
+
+        {/* Pagination Controls */}
+        {filteredTickets.length > pageSize && (
+          <div className="p-4 bg-slate-900/90 border-t border-slate-800 flex items-center justify-between text-xs text-slate-400">
+            <div>
+              Showing {Math.min(filteredTickets.length, (page - 1) * pageSize + 1)} to {Math.min(filteredTickets.length, page * pageSize)} of {filteredTickets.length} tickets
+            </div>
+            <div className="flex items-center space-x-2">
+              <button
+                disabled={page === 1}
+                onClick={() => setPage(p => Math.max(1, p - 1))}
+                className="px-3 py-1.5 rounded-lg bg-slate-800 text-slate-300 disabled:opacity-40 hover:bg-slate-700"
+              >
+                Previous
+              </button>
+              <span className="font-mono text-slate-200">
+                Page {page} of {Math.ceil(filteredTickets.length / pageSize)}
+              </span>
+              <button
+                disabled={page >= Math.ceil(filteredTickets.length / pageSize)}
+                onClick={() => setPage(p => p + 1)}
+                className="px-3 py-1.5 rounded-lg bg-slate-800 text-slate-300 disabled:opacity-40 hover:bg-slate-700"
+              >
+                Next
+              </button>
+            </div>
           </div>
         )}
       </div>

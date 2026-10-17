@@ -10,9 +10,11 @@ from .auth import hash_password
 DB_PATH = os.path.join(os.path.dirname(__file__), "..", "triagex.db")
 
 def get_connection():
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=20.0)
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA busy_timeout = 20000")
     return conn
+
 
 def calculate_sla_due(created_at_dt: datetime, tier: str) -> str:
     tier_upper = tier.upper()
@@ -125,10 +127,47 @@ def init_db():
         created_at TEXT NOT NULL
     )
     """)
+
+    # 7. In-App Notifications table
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS notifications (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        title TEXT NOT NULL,
+        message TEXT NOT NULL,
+        ticket_id TEXT,
+        is_read INTEGER DEFAULT 0,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY (user_id) REFERENCES users(id)
+    )
+    """)
+
+    # 8. Canned Replies table
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS canned_replies (
+        id TEXT PRIMARY KEY,
+        shortcut TEXT UNIQUE NOT NULL,
+        title TEXT NOT NULL,
+        category TEXT NOT NULL,
+        content TEXT NOT NULL,
+        created_at TEXT NOT NULL
+    )
+    """)
+
+    # Ensure CSAT columns exist on tickets
+    try:
+        cursor.execute("ALTER TABLE tickets ADD COLUMN csat_rating INTEGER")
+    except Exception:
+        pass
+    try:
+        cursor.execute("ALTER TABLE tickets ADD COLUMN csat_feedback TEXT")
+    except Exception:
+        pass
     
     conn.commit()
     seed_users_and_tickets(conn)
     seed_faqs_and_settings(conn)
+    seed_canned_replies(conn)
     conn.close()
 
 def seed_users_and_tickets(conn):
@@ -505,7 +544,14 @@ def insert_ticket(ticket_data: Dict[str, Any]) -> Dict[str, Any]:
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute("""
-    INSERT INTO tickets VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO tickets (
+        id, ticket_number, customer_id, customer_name, customer_email,
+        customer_type, channel, category, subject, description,
+        created_at, status, priority_score, assigned_tier,
+        assigned_agent_id, assigned_agent_name, routing_reason,
+        explainability_json, kb_auto_reply_json, resolution_note,
+        resolved_at, sla_due_at, csat_rating, csat_feedback
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (
         ticket_data["id"],
         ticket_data["ticket_number"],
@@ -528,7 +574,9 @@ def insert_ticket(ticket_data: Dict[str, Any]) -> Dict[str, Any]:
         json.dumps(ticket_data.get("kb_auto_reply")) if ticket_data.get("kb_auto_reply") else None,
         ticket_data.get("resolution_note"),
         ticket_data.get("resolved_at"),
-        ticket_data["sla_due_at"]
+        ticket_data["sla_due_at"],
+        ticket_data.get("csat_rating"),
+        ticket_data.get("csat_feedback")
     ))
     
     # Audit log
@@ -1002,6 +1050,7 @@ def reset_demo_database(performed_by: str = "Admin"):
     # Re-seed
     seed_users_and_tickets(conn)
     seed_faqs_and_settings(conn)
+    seed_canned_replies(conn)
     
     cursor.execute("""
     INSERT INTO audit_logs (ticket_id, action, details, performed_by, timestamp)
@@ -1010,4 +1059,125 @@ def reset_demo_database(performed_by: str = "Admin"):
     
     conn.commit()
     conn.close()
+
+# --- CANNED REPLIES & SEED ---
+
+def seed_canned_replies(conn):
+    cursor = conn.cursor()
+    cursor.execute("SELECT COUNT(*) FROM canned_replies")
+    if cursor.fetchone()[0] == 0:
+        now_iso = datetime.utcnow().isoformat() + "Z"
+        default_templates = [
+            ("cr-01", "greet", "Standard Friendly Greeting", "Greeting", "Hello {{customer_name}},\n\nThank you for reaching out to TriageX Priority Support. My name is {{agent_name}} and I am currently reviewing your inquiry (Ticket {{ticket_number}}).\n\nCould you please confirm if this issue is currently affecting all users on your account?", now_iso),
+            ("cr-02", "outage", "Production Outage Investigation", "Incident", "Hello {{customer_name}},\n\nWe understand that your production service is severely impacted and treat this with the highest P1 priority. Our Senior Site Reliability Engineering team has been notified and is currently analyzing server telemetry and database latency metrics.\n\nWe will provide a status update every 15 minutes until resolution.", now_iso),
+            ("cr-03", "refund", "Billing & Refund Confirmation", "Billing", "Hello {{customer_name}},\n\nWe have reviewed the billing discrepancy on your account and processed a full reversal of the duplicate charge. You should see the credit reflected on your original payment card within 3-5 business days.\n\nPlease accept our sincere apologies for the inconvenience.", now_iso),
+            ("cr-04", "resolve", "Resolution Confirmation & Closure", "Closing", "Hello {{customer_name}},\n\nWe have implemented a fix and confirmed that your service is now running normally. We are marking this ticket as Resolved.\n\nPlease take a quick moment to rate your support experience below. Thank you for choosing TriageX!", now_iso),
+            ("cr-05", "logs", "Request Error Logs & Screenshots", "Diagnostics", "Hello {{customer_name}},\n\nTo help us diagnose this further, could you please provide:\n1. The approximate timestamp when the issue occurred\n2. Any console error messages (F12 > Console tab)\n3. A full-screen screenshot showing the error modal", now_iso)
+        ]
+        for cid, sc, title, cat, content, dt in default_templates:
+            cursor.execute("""
+            INSERT OR IGNORE INTO canned_replies (id, shortcut, title, category, content, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """, (cid, sc, title, cat, content, dt))
+        conn.commit()
+
+def get_all_canned_replies() -> List[Dict[str, Any]]:
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM canned_replies ORDER BY category ASC, title ASC")
+    rows = cursor.fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+def insert_canned_reply(shortcut: str, title: str, category: str, content: str) -> Dict[str, Any]:
+    conn = get_connection()
+    cursor = conn.cursor()
+    cid = f"cr-{uuid.uuid4().hex[:6]}"
+    now_iso = datetime.utcnow().isoformat() + "Z"
+    cursor.execute("""
+    INSERT INTO canned_replies (id, shortcut, title, category, content, created_at)
+    VALUES (?, ?, ?, ?, ?, ?)
+    """, (cid, shortcut.strip().lower(), title.strip(), category.strip(), content.strip(), now_iso))
+    conn.commit()
+    conn.close()
+    return {"id": cid, "shortcut": shortcut, "title": title, "category": category, "content": content, "created_at": now_iso}
+
+def delete_canned_reply(canned_id: str) -> bool:
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM canned_replies WHERE id = ?", (canned_id,))
+    conn.commit()
+    conn.close()
+    return True
+
+# --- IN-APP NOTIFICATIONS ---
+
+def create_notification(user_id: str, title: str, message: str, ticket_id: Optional[str] = None):
+    conn = get_connection()
+    cursor = conn.cursor()
+    nid = f"notif-{uuid.uuid4().hex[:8]}"
+    now_iso = datetime.utcnow().isoformat() + "Z"
+    cursor.execute("""
+    INSERT INTO notifications (id, user_id, title, message, ticket_id, is_read, created_at)
+    VALUES (?, ?, ?, ?, ?, 0, ?)
+    """, (nid, user_id, title, message, ticket_id, now_iso))
+    conn.commit()
+    conn.close()
+    return {"id": nid, "user_id": user_id, "title": title, "message": message, "ticket_id": ticket_id, "is_read": 0, "created_at": now_iso}
+
+def get_user_notifications(user_id: str) -> List[Dict[str, Any]]:
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT 30", (user_id,))
+    rows = cursor.fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+def mark_notifications_read(user_id: str):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("UPDATE notifications SET is_read = 1 WHERE user_id = ?", (user_id,))
+    conn.commit()
+    conn.close()
+
+# --- CSAT RATINGS & FEEDBACK ---
+
+def submit_ticket_csat(ticket_id: str, rating: int, feedback: Optional[str], customer_id: str) -> Optional[Dict[str, Any]]:
+    conn = get_connection()
+    cursor = conn.cursor()
+    now_iso = datetime.utcnow().isoformat() + "Z"
+    
+    # Check ticket ownership
+    cursor.execute("SELECT customer_id, ticket_number, assigned_agent_id FROM tickets WHERE id = ?", (ticket_id,))
+    row = cursor.fetchone()
+    if not row or row["customer_id"] != customer_id:
+        conn.close()
+        return None
+        
+    cursor.execute("""
+    UPDATE tickets 
+    SET csat_rating = ?, csat_feedback = ?
+    WHERE id = ?
+    """, (rating, feedback, ticket_id))
+    
+    cursor.execute("""
+    INSERT INTO audit_logs (ticket_id, action, details, performed_by, timestamp)
+    VALUES (?, ?, ?, ?, ?)
+    """, (ticket_id, "CSAT_RATING_SUBMITTED", f"Customer submitted CSAT {rating}/5 stars. Feedback: {feedback or 'None'}", customer_id, now_iso))
+    
+    conn.commit()
+    conn.close()
+
+    # Notify assigned agent if any (after conn closed to avoid sqlite lock)
+    if row["assigned_agent_id"]:
+        create_notification(
+            user_id=row["assigned_agent_id"],
+            title=f"CSAT Rating Received ({rating} ⭐)",
+            message=f"Customer rated Ticket {row['ticket_number']}: {rating}/5 stars.",
+            ticket_id=ticket_id
+        )
+        
+    return get_ticket_by_id(ticket_id)
+
+
 
