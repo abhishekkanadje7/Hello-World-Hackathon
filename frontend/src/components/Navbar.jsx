@@ -87,24 +87,15 @@ export default function Navbar({ wsConnected }) {
           {/* Brand Logo */}
           <Link 
             to={user ? (user.role === 'admin' ? '/admin' : user.role === 'agent' ? '/agent' : '/customer/tickets') : '/'} 
-            className="flex items-center space-x-3 group"
+            className="flex items-center space-x-2 group"
           >
-            <div className="w-10 h-10 rounded-xl bg-blue-600 flex items-center justify-center shadow-md shadow-blue-500/20 group-hover:scale-105 transition-transform">
-              <ShieldAlert className="w-5 h-5 text-white" />
-            </div>
-            <div>
-              <div className="flex items-center space-x-2">
-                <span className="text-xl font-bold tracking-tight text-slate-900 font-sans">
-                  Triage<span className="text-blue-600">X</span>
-                </span>
-                <span className="text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 font-semibold border border-blue-200">
-                  AI Router
-                </span>
-              </div>
-              <p className="text-[11px] text-slate-500 font-medium -mt-0.5 hidden sm:block">
-                Predictive Sentiment & Urgency Dispatch
-              </p>
-            </div>
+            <span className="text-2xl font-black tracking-tight text-slate-900 font-sans">
+              Triage<span className="text-blue-600">X</span>
+            </span>
+            <span className="text-slate-300 font-light text-xl">/</span>
+            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider hidden sm:inline">
+              Support Router
+            </span>
           </Link>
 
           {/* Nav Links according to Role */}

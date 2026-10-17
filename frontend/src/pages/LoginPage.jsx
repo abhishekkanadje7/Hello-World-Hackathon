@@ -59,14 +59,11 @@ export default function LoginPage() {
   return (
     <div className="min-h-[calc(100vh-100px)] flex flex-col justify-center py-10 px-4 sm:px-6 lg:px-8 bg-slate-50">
       <div className="sm:mx-auto sm:w-full sm:max-w-md text-center">
-        <div className="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-blue-600 shadow-md shadow-blue-500/20 text-white mb-3">
-          <LogIn className="w-6 h-6" />
-        </div>
-        <h2 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900">
-          Customer & Staff Sign In
+        <h2 className="text-2xl sm:text-3xl font-black tracking-tight text-slate-900">
+          Sign In
         </h2>
-        <p className="mt-1.5 text-sm text-slate-500">
-          Sign in to view support tickets, track SLA countdowns, or manage portal
+        <p className="mt-1.5 text-xs text-slate-500">
+          Access your support workspace, queue, or administration console
         </p>
       </div>
 
