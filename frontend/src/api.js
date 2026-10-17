@@ -1,4 +1,11 @@
+import { handleMockRequest } from './mockEngine';
+
 const API_BASE = '/api';
+
+export const isStaticHosting = typeof window !== 'undefined' && (
+  window.location.hostname.includes('github.io') ||
+  window.location.protocol === 'file:'
+);
 
 let onSessionExpiredCallback = null;
 
@@ -19,47 +26,66 @@ export function setToken(token) {
 }
 
 async function request(endpoint, options = {}) {
-  const token = getToken();
-  const headers = {
-    'Content-Type': 'application/json',
-    ...(options.headers || {})
-  };
-
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
+  // If hosted on GitHub Pages (static file host without python runtime), use Mock Engine directly
+  if (isStaticHosting) {
+    return await handleMockRequest(endpoint, options);
   }
 
-  const res = await fetch(`${API_BASE}${endpoint}`, {
-    ...options,
-    headers
-  });
+  try {
+    const token = getToken();
+    const headers = {
+      'Content-Type': 'application/json',
+      ...(options.headers || {})
+    };
 
-  if (res.status === 401) {
-    // Check if it was an expired token on a protected endpoint
-    if (!endpoint.includes('/auth/login') && !endpoint.includes('/auth/register')) {
-      setToken(null);
-      localStorage.removeItem('triagex_user');
-      if (onSessionExpiredCallback) {
-        onSessionExpiredCallback('Your session expired, please log in again.');
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    const res = await fetch(`${API_BASE}${endpoint}`, {
+      ...options,
+      headers
+    });
+
+    if (res.status === 404 || res.status === 502 || res.status === 503) {
+      // Backend route unreachable, fallback to Mock Engine
+      return await handleMockRequest(endpoint, options);
+    }
+
+    if (res.status === 401) {
+      // Check if it was an expired token on a protected endpoint
+      if (!endpoint.includes('/auth/login') && !endpoint.includes('/auth/register')) {
+        setToken(null);
+        localStorage.removeItem('triagex_user');
+        if (onSessionExpiredCallback) {
+          onSessionExpiredCallback('Your session expired, please log in again.');
+        }
       }
     }
-  }
 
-  if (!res.ok) {
-    let errMessage = 'Request failed';
-    try {
-      const err = await res.json();
-      errMessage = err.detail || errMessage;
-    } catch (e) {
-      errMessage = res.statusText || errMessage;
+    if (!res.ok) {
+      let errMessage = 'Request failed';
+      try {
+        const err = await res.json();
+        errMessage = err.detail || errMessage;
+      } catch (e) {
+        errMessage = res.statusText || errMessage;
+      }
+      const error = new Error(errMessage);
+      error.status = res.status;
+      throw error;
     }
-    const error = new Error(errMessage);
-    error.status = res.status;
-    throw error;
-  }
 
-  return res.json();
+    return res.json();
+  } catch (err) {
+    if (err.name === 'TypeError' || (err.message && err.message.includes('Failed to fetch'))) {
+      console.warn('Backend server offline, switching to Client Mock Engine');
+      return await handleMockRequest(endpoint, options);
+    }
+    throw err;
+  }
 }
+
 
 // --- AUTH APIS ---
 
@@ -246,6 +272,16 @@ export async function resetDemoDatabase() {
 }
 
 export async function exportTicketsCsv() {
+  if (isStaticHosting) {
+    const list = await handleMockRequest('/tickets');
+    const header = ['Ticket Number', 'Subject', 'Customer', 'Tier', 'Priority Score', 'Status', 'SLA Due'].join(',');
+    const rows = (Array.isArray(list) ? list : (list.items || [])).map(t => 
+      [t.ticket_number, `"${(t.subject || '').replace(/"/g, '""')}"`, `"${t.customer_name}"`, t.assigned_tier, t.priority_score, t.status, t.sla_due_at].join(',')
+    );
+    const csvContent = [header, ...rows].join('\n');
+    return new Blob([csvContent], { type: 'text/csv' });
+  }
+
   const token = getToken();
   const res = await fetch(`${API_BASE}/admin/tickets/export-csv`, {
     headers: {
@@ -319,27 +355,55 @@ export async function updateUserProfile(name) {
 }
 
 export function initWebSocket(onMessage, onOpen, onClose) {
+  if (isStaticHosting) {
+    // Provide simulated live websocket pulse for GitHub Pages
+    setTimeout(() => {
+      if (onOpen) onOpen();
+    }, 250);
+
+    const interval = setInterval(() => {
+      if (onMessage) {
+        onMessage({ type: 'HEARTBEAT', timestamp: new Date().toISOString() });
+      }
+    }, 15000);
+
+    return {
+      close: () => {
+        clearInterval(interval);
+        if (onClose) onClose();
+      },
+      send: () => {}
+    };
+  }
+
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   const wsUrl = `${protocol}//${window.location.host}/ws`;
   
-  const ws = new WebSocket(wsUrl);
-  
-  ws.onopen = () => {
+  let ws;
+  try {
+    ws = new WebSocket(wsUrl);
+    ws.onopen = () => {
+      if (onOpen) onOpen();
+    };
+    ws.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (onMessage) onMessage(data);
+      } catch (e) {
+        console.error('Failed to parse WS message:', e);
+      }
+    };
+    ws.onclose = () => {
+      if (onClose) onClose();
+    };
+  } catch (err) {
+    console.warn('WebSocket connection failed, switching to poll mode');
     if (onOpen) onOpen();
-  };
-  
-  ws.onmessage = (event) => {
-    try {
-      const data = JSON.parse(event.data);
-      if (onMessage) onMessage(data);
-    } catch (e) {
-      console.error('Failed to parse WS message:', e);
-    }
-  };
-  
-  ws.onclose = () => {
-    if (onClose) onClose();
-  };
+    ws = {
+      close: () => {},
+      send: () => {}
+    };
+  }
   
   return ws;
 }
