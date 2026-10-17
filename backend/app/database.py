@@ -73,6 +73,8 @@ def init_db():
         resolution_note TEXT,
         resolved_at TEXT,
         sla_due_at TEXT NOT NULL,
+        csat_rating INTEGER,
+        csat_feedback TEXT,
         FOREIGN KEY (customer_id) REFERENCES users(id),
         FOREIGN KEY (assigned_agent_id) REFERENCES users(id)
     )
@@ -331,7 +333,14 @@ def seed_users_and_tickets(conn):
             resolved_at = st["created_at"] if st["status"] == "Resolved" else None
             
             cursor.execute("""
-            INSERT INTO tickets VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO tickets (
+                id, ticket_number, customer_id, customer_name, customer_email,
+                customer_type, channel, category, subject, description,
+                created_at, status, priority_score, assigned_tier,
+                assigned_agent_id, assigned_agent_name, routing_reason,
+                explainability_json, kb_auto_reply_json, resolution_note,
+                resolved_at, sla_due_at, csat_rating, csat_feedback
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 st["id"],
                 st["ticket_number"],
@@ -354,8 +363,11 @@ def seed_users_and_tickets(conn):
                 json.dumps(kb_match) if kb_match else None,
                 "Auto-resolved with Knowledge Base reference" if kb_match else None,
                 resolved_at,
-                sla_due
+                sla_due,
+                st.get("csat_rating"),
+                st.get("csat_feedback")
             ))
+
             
             # If KB match, add system auto-reply
             if kb_match:
