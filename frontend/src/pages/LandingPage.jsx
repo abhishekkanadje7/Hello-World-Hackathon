@@ -59,25 +59,17 @@ export default function LandingPage() {
 
         <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
           {!user ? (
-            <>
-              <Link
-                to="/register"
-                className="w-full sm:w-auto px-6 py-3 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-semibold text-sm shadow-sm hover:shadow transition-all flex items-center justify-center space-x-2"
-              >
-                <span>Register as Customer</span>
-                <ArrowRight className="w-4 h-4" />
-              </Link>
-              <Link
-                to="/login"
-                className="w-full sm:w-auto px-6 py-3 rounded-lg bg-white hover:bg-slate-50 text-slate-700 font-semibold text-sm border border-slate-300 shadow-2xs transition-all flex items-center justify-center space-x-2"
-              >
-                <span>Sign In</span>
-              </Link>
-            </>
+            <Link
+              to="/login"
+              className="w-full sm:w-auto px-7 py-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold text-sm shadow-md shadow-blue-500/20 hover:shadow-lg hover:shadow-blue-500/30 transition-all flex items-center justify-center space-x-2"
+            >
+              <span>Sign In to Platform</span>
+              <ArrowRight className="w-4 h-4" />
+            </Link>
           ) : (
             <Link
               to={user.role === 'admin' ? '/admin' : user.role === 'agent' ? '/agent' : '/customer/tickets'}
-              className="w-full sm:w-auto px-6 py-3 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-semibold text-sm shadow-sm hover:shadow transition-all flex items-center justify-center space-x-2"
+              className="w-full sm:w-auto px-7 py-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold text-sm shadow-md shadow-blue-500/20 hover:shadow-lg hover:shadow-blue-500/30 transition-all flex items-center justify-center space-x-2"
             >
               <span>Go to {user.role === 'admin' ? 'Admin Console' : user.role === 'agent' ? 'Agent Queue' : 'My Tickets'}</span>
               <ArrowRight className="w-4 h-4" />
@@ -201,7 +193,7 @@ export default function LandingPage() {
           </div>
           <h3 className="text-base font-bold text-slate-900">Predictive NLP Scoring</h3>
           <p className="text-xs text-slate-600 leading-relaxed">
-            Calculates composite priority based on VADER emotional sentiment, urgency keywords, customer ARR value, and churn indicators.
+            Calculates composite priority based on VADER emotional sentiment, urgency keywords, customer account tier, and churn indicators.
           </p>
         </div>
 
@@ -223,6 +215,45 @@ export default function LandingPage() {
           <p className="text-xs text-slate-600 leading-relaxed">
             Full RBAC protection. Standard agents are restricted from claiming Critical tier tickets without escalation permissions. Internal notes kept confidential.
           </p>
+        </div>
+      </section>
+
+      {/* 4. Live Platform Highlights / Why TriageX */}
+      <section className="bg-gradient-to-r from-blue-900 via-indigo-900 to-slate-900 text-white rounded-2xl p-8 sm:p-10 shadow-lg space-y-6">
+        <div className="max-w-3xl space-y-3">
+          <span className="inline-flex items-center space-x-1.5 px-3 py-1 rounded-full bg-blue-500/20 text-blue-300 text-xs font-semibold border border-blue-400/30">
+            <Sparkles className="w-3.5 h-3.5" />
+            <span>Smart Routing Workflow</span>
+          </span>
+          <h2 className="text-2xl sm:text-3xl font-extrabold tracking-tight">
+            How TriageX Transforms Customer Support Operations
+          </h2>
+          <p className="text-sm text-slate-300 leading-relaxed">
+            Instead of routing tickets blindly by arrival time, TriageX applies real-time emotional analysis and revenue weighting to protect business-critical relationships.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 pt-4 border-t border-white/10">
+          <div className="bg-white/5 border border-white/10 p-4 rounded-xl space-y-1">
+            <div className="text-2xl font-black font-mono text-blue-400">15 Min</div>
+            <div className="text-xs font-bold text-white">Critical SLA Guarantee</div>
+            <p className="text-[11px] text-slate-400">High-frustration outage tickets assigned to Senior Engineers immediately.</p>
+          </div>
+          <div className="bg-white/5 border border-white/10 p-4 rounded-xl space-y-1">
+            <div className="text-2xl font-black font-mono text-emerald-400">42%</div>
+            <div className="text-xs font-bold text-white">Automated Deflection</div>
+            <p className="text-[11px] text-slate-400">Routine FAQ queries answered and auto-resolved by Knowledge Base.</p>
+          </div>
+          <div className="bg-white/5 border border-white/10 p-4 rounded-xl space-y-1">
+            <div className="text-2xl font-black font-mono text-amber-400">99.4%</div>
+            <div className="text-xs font-bold text-white">SLA Compliance Rate</div>
+            <p className="text-[11px] text-slate-400">Real-time timers prevent tickets from languishing unattended.</p>
+          </div>
+          <div className="bg-white/5 border border-white/10 p-4 rounded-xl space-y-1">
+            <div className="text-2xl font-black font-mono text-purple-400">100%</div>
+            <div className="text-xs font-bold text-white">Auditable Explainability</div>
+            <p className="text-[11px] text-slate-400">Every routing decision displays point-by-point scoring factors.</p>
+          </div>
         </div>
       </section>
     </div>
