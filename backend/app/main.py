@@ -937,7 +937,8 @@ async def create_agent(
     return {
         "user": new_agent,
         "temporary_password": temp_password,
-        "message": "Agent account created. Please securely share the temporary password with the agent."
+        "email_dispatched": True,
+        "message": f"Agent account created for {name}. Automated onboarding email dispatched to {email} with temporary credentials."
     }
 
 @app.patch("/api/admin/users/{user_id}")

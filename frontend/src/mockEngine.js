@@ -515,14 +515,25 @@ export async function handleMockRequest(endpoint, options = {}) {
   const searchParams = url.searchParams;
 
   // 1. AUTH / LOGIN
+  // कमेंट: लॉगिन पडताळणी - सर्व ॲडमिन, एजंट आणि ग्राहकांसाठी
   if (pathname === '/auth/login' && method === 'POST') {
     const email = body.email ? body.email.toLowerCase().trim() : '';
+    const password = body.password || '';
     const user = db.users.find(u => u.email.toLowerCase() === email);
+    
     if (!user) {
-      const err = new Error('Invalid email or password');
+      const err = new Error('Invalid email or password.');
       err.status = 401;
       throw err;
     }
+
+    // Verify password if explicitly stored on user
+    if (user.password && user.password !== password) {
+      const err = new Error('Invalid email or password.');
+      err.status = 401;
+      throw err;
+    }
+
     const token = `demo_jwt_token_${user.id}_${Date.now()}`;
     return {
       access_token: token,
@@ -539,19 +550,38 @@ export async function handleMockRequest(endpoint, options = {}) {
     };
   }
 
-  // 2. AUTH / REGISTER
+  // 2. AUTH / REGISTER (ग्राहक स्वतः नोंदणी करतात)
   if (pathname === '/auth/register' && method === 'POST') {
+    const cleanEmail = body.email.toLowerCase().trim();
+    const existing = db.users.find(u => u.email.toLowerCase() === cleanEmail);
+    if (existing) {
+      const err = new Error('An account with this email address already exists.');
+      err.status = 400;
+      throw err;
+    }
+
     const newUser = {
       id: `usr-cust-${Date.now().toString(36)}`,
-      name: body.name || 'New Customer',
-      email: body.email.toLowerCase(),
+      name: body.name || 'Customer',
+      email: cleanEmail,
       role: 'customer',
       agent_level: null,
       customer_type: 'Regular',
+      password: body.password, // स्टोर केलेला पासवर्ड
       is_active: 1,
       must_change_password: 0
     };
     db.users.push(newUser);
+    
+    // Audit log
+    db.audit_logs.unshift({
+      id: `aud-${Date.now()}`,
+      action: 'USER_REGISTERED',
+      details: `New customer self-registered: ${newUser.name} (${newUser.email})`,
+      performed_by: newUser.email,
+      timestamp: new Date().toISOString()
+    });
+
     saveDB(db);
     const token = `demo_jwt_token_${newUser.id}_${Date.now()}`;
     return {
@@ -850,19 +880,33 @@ export async function handleMockRequest(endpoint, options = {}) {
     return db.users;
   }
   if (pathname === '/admin/agents' && method === 'POST') {
+    const tempPassword = `Ag!${Math.random().toString(36).slice(-6)}#9`;
     const newAg = {
       id: `usr-agent-${Date.now().toString(36)}`,
       name: body.name,
-      email: body.email.toLowerCase(),
+      email: body.email.toLowerCase().trim(),
       role: 'agent',
       agent_level: body.agent_level || 'Standard',
       customer_type: null,
+      password: tempPassword,
       is_active: 1,
       must_change_password: 1
     };
     db.users.push(newAg);
+    db.audit_logs.unshift({
+      id: `aud-${Date.now()}`,
+      action: 'AGENT_CREATED',
+      details: `Admin created support agent: ${newAg.name} (${newAg.email}) [Level: ${newAg.agent_level}]. Onboarding email with credentials dispatched.`,
+      performed_by: 'admin@triagex.com',
+      timestamp: new Date().toISOString()
+    });
     saveDB(db);
-    return { message: 'Agent created', user: newAg };
+    return {
+      message: 'Agent created successfully and credentials dispatched via email',
+      user: newAg,
+      temporary_password: tempPassword,
+      email_dispatched: true
+    };
   }
 
   // 17. ADMIN FAQS

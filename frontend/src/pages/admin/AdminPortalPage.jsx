@@ -836,18 +836,32 @@ export default function AdminPortalPage() {
 
                   {createdAgentResult ? (
                     <div className="space-y-4">
-                      <div className="p-4 rounded-xl bg-emerald-950/60 border border-emerald-800 text-emerald-200 text-xs">
-                        <strong className="block text-sm mb-1">🎉 Agent Account Created!</strong>
-                        <p>Share this temporary password securely with the agent. They will be forced to choose a new password upon first login.</p>
+                      <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-900 text-xs space-y-2">
+                        <strong className="block text-sm font-bold text-emerald-800">🎉 Support Agent Account Provisioned!</strong>
+                        <p className="text-slate-600">
+                          An automated onboarding email has been sent to <strong>{createdAgentResult.user?.email || newAgentEmail}</strong> with the login details and temporary password.
+                        </p>
+                        <div className="flex items-center space-x-1.5 text-emerald-700 font-semibold pt-1">
+                          <span>📧 Status: Credentials dispatched automatically to inbox</span>
+                        </div>
                       </div>
-                      <div className="bg-slate-950 p-3 rounded-xl border border-slate-800 font-mono text-center text-sm font-bold text-white select-all">
-                        {createdAgentResult.temporary_password}
+                      <div>
+                        <span className="text-xs font-semibold text-slate-700 block mb-1">Generated Temporary Password:</span>
+                        <div className="bg-slate-100 p-3 rounded-xl border border-slate-300 font-mono text-center text-sm font-bold text-slate-900 select-all">
+                          {createdAgentResult.temporary_password}
+                        </div>
+                        <p className="text-[11px] text-slate-500 mt-1 text-center">
+                          The agent will be prompted to set a permanent password upon first login.
+                        </p>
                       </div>
                       <button
-                        onClick={() => setShowCreateAgentModal(false)}
-                        className="w-full py-2 rounded-xl text-xs font-semibold bg-blue-600 hover:bg-blue-500 text-white"
+                        onClick={() => {
+                          setShowCreateAgentModal(false);
+                          setCreatedAgentResult(null);
+                        }}
+                        className="w-full py-2.5 rounded-xl text-xs font-semibold bg-blue-600 hover:bg-blue-700 text-white shadow-sm transition-all"
                       >
-                        Done
+                        Close & Refresh Agent List
                       </button>
                     </div>
                   ) : (

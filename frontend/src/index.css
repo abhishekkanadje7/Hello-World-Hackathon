@@ -1,73 +1,140 @@
+/* ==========================================================================
+   TriageX - Professional Modern Enterprise SaaS Theme (Clean Light Design)
+   कमेंट: हा CSS पूर्णपणे आधुनिक, कॉर्पोरेट, आणि स्मूथ Professional Look साठी डिझाइन केला आहे.
+   कोणताही भडक डार्क मोड नाही; स्वच्छ पांढरा आणि सौम्य राखाडी (Slate-50) बॅकग्राउंड.
+   ========================================================================== */
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 @layer base {
   body {
-    @apply bg-slate-900 text-slate-100 antialiased selection:bg-indigo-500 selection:text-white;
-    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    background-color: #f8fafc !important;
+    color: #0f172a !important;
+    font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* सर्व सामान्य Headings आणि Labels साठी स्पष्ट गडद रंग */
+  h1, h2, h3, h4, h5, h6 {
+    color: #0f172a;
+    letter-spacing: -0.02em;
   }
 }
 
-/* Custom scrollbars */
+/* Custom Smooth Scrollbar */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 7px;
+  height: 7px;
 }
 ::-webkit-scrollbar-track {
-  background: rgba(15, 23, 42, 0.6);
+  background: #f1f5f9;
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(71, 85, 105, 0.6);
-  border-radius: 4px;
+  background: #cbd5e1;
+  border-radius: 6px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(99, 102, 241, 0.8);
+  background: #94a3b8;
 }
 
-/* Glowing animations for priority */
-@keyframes pulse-red {
-  0%, 100% {
-    box-shadow: 0 0 15px rgba(239, 68, 68, 0.5);
-  }
-  50% {
-    box-shadow: 0 0 25px rgba(239, 68, 68, 0.8);
-  }
+/* Professional Card Styling - स्वच्छ पांढरे कार्ड्स */
+.pro-card {
+  background-color: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.04), 0 1px 2px -1px rgba(0, 0, 0, 0.04);
 }
 
-.glow-critical {
-  animation: pulse-red 2s infinite ease-in-out;
-}
-
-/* Light mode styles */
-html.light-mode body {
-  background-color: #f8fafc;
-  color: #0f172a;
-}
-
-html.light-mode header,
-html.light-mode aside,
-html.light-mode footer {
+/* Professional Input Fields - स्वच्छ मोकळे इनपुट बॉक्सेस */
+.pro-input {
   background-color: #ffffff !important;
-  border-color: #e2e8f0 !important;
+  color: #0f172a !important;
+  border: 1px solid #cbd5e1 !important;
+  border-radius: 8px !important;
+  transition: all 0.15s ease-in-out;
+}
+.pro-input:focus {
+  border-color: #2563eb !important;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15) !important;
+  outline: none !important;
 }
 
-html.light-mode .bg-slate-900,
-html.light-mode .bg-slate-950,
-html.light-mode .bg-slate-900\/60,
-html.light-mode .bg-slate-900\/80,
-html.light-mode .bg-slate-900\/90 {
+/* Global Overrides to force Clean Enterprise Light Mode across all components */
+.bg-slate-950,
+.bg-slate-900,
+.bg-slate-900\/95,
+.bg-slate-900\/90,
+.bg-slate-900\/80,
+.bg-slate-900\/60,
+.bg-slate-800,
+.bg-slate-800\/80,
+.bg-slate-800\/60,
+.bg-slate-800\/50,
+.bg-slate-800\/40 {
   background-color: #ffffff !important;
-  color: #1e293b !important;
-}
-
-html.light-mode .text-white {
   color: #0f172a !important;
 }
 
-html.light-mode .border-slate-800,
-html.light-mode .border-slate-800\/80,
-html.light-mode .border-slate-700 {
+/* Subtle background for secondary panels */
+.bg-slate-950\/50,
+.bg-slate-900\/40,
+.bg-slate-900\/30,
+.bg-slate-800\/20,
+.bg-slate-800\/30 {
+  background-color: #f8fafc !important;
+}
+
+/* Borders */
+.border-slate-800,
+.border-slate-800\/80,
+.border-slate-800\/60,
+.border-slate-800\/50,
+.border-slate-700,
+.border-slate-700\/80,
+.border-slate-700\/60,
+.border-slate-700\/50 {
   border-color: #e2e8f0 !important;
 }
 
+/* Text Colors */
+.text-white {
+  color: #0f172a !important;
+}
+.text-slate-100 {
+  color: #0f172a !important;
+}
+.text-slate-200 {
+  color: #1e293b !important;
+}
+.text-slate-300 {
+  color: #334155 !important;
+}
+.text-slate-400 {
+  color: #64748b !important;
+}
+
+/* Clean Input Styling */
+input, textarea, select {
+  background-color: #ffffff !important;
+  color: #0f172a !important;
+  border-color: #cbd5e1 !important;
+}
+input::placeholder, textarea::placeholder {
+  color: #94a3b8 !important;
+}
+
+/* Critical Alert Pulse */
+@keyframes soft-pulse-red {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.2);
+  }
+  50% {
+    box-shadow: 0 0 0 6px rgba(239, 68, 68, 0.25);
+  }
+}
+.glow-critical {
+  animation: soft-pulse-red 2s infinite;
+}
