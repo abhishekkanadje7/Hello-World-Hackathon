@@ -32,7 +32,6 @@ export default function NewTicketPage() {
   // फॉर्म इनपुट स्टेट्स
   const [subject, setSubject] = useState('');
   const [category, setCategory] = useState('Technical Support');
-  const [severity, setSeverity] = useState('Medium');
   const [environment, setEnvironment] = useState('Web Application');
   const [contactInfo, setContactInfo] = useState('');
   const [description, setDescription] = useState('');
@@ -54,7 +53,6 @@ export default function NewTicketPage() {
     // वर्णनात अतिरिक्त ग्राहक माहिती सुरक्षितपणे जोडणे
     let fullDescription = description.trim();
     const extraMetadata = [];
-    if (severity) extraMetadata.push(`Stated Impact: ${severity}`);
     if (environment) extraMetadata.push(`Platform: ${environment}`);
     if (contactInfo.trim()) extraMetadata.push(`Contact: ${contactInfo.trim()}`);
     if (errorDetails.trim()) extraMetadata.push(`Error/Log details: ${errorDetails.trim()}`);
@@ -189,7 +187,7 @@ export default function NewTicketPage() {
             />
           </div>
 
-          {/* २. Category & Severity Options */}
+          {/* २. Category & Platform */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="text-xs font-semibold text-slate-700 block mb-1.5">
@@ -211,25 +209,6 @@ export default function NewTicketPage() {
 
             <div>
               <label className="text-xs font-semibold text-slate-700 block mb-1.5">
-                Impact on your work
-              </label>
-              <select
-                value={severity}
-                onChange={(e) => setSeverity(e.target.value)}
-                className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-lg text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 transition-all"
-              >
-                <option value="Low">Low - General question or minor inquiry</option>
-                <option value="Medium">Medium - Impairs normal usage</option>
-                <option value="High">High - Major feature broken or blocked</option>
-                <option value="Critical">Critical - System outage or emergency</option>
-              </select>
-            </div>
-          </div>
-
-          {/* ३. Environment & Alternative Contact */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="text-xs font-semibold text-slate-700 block mb-1.5">
                 Platform / Environment
               </label>
               <select
@@ -244,20 +223,20 @@ export default function NewTicketPage() {
                 <option value="Other">Other / Not Applicable</option>
               </select>
             </div>
+          </div>
 
-            <div>
-              <label className="text-xs font-semibold text-slate-700 block mb-1.5">
-                Contact Phone or Callback <span className="text-slate-400 font-normal">(Optional)</span>
-              </label>
-              <input
-                type="text"
-                placeholder="e.g. +91 98765 43210"
-                value={contactInfo}
-                onChange={(e) => setContactInfo(e.target.value)}
-                className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-lg text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 transition-all"
-              >
-              </input>
-            </div>
+          {/* ३. Alternative Contact (Optional) */}
+          <div>
+            <label className="text-xs font-semibold text-slate-700 block mb-1.5">
+              Contact Phone or Callback <span className="text-slate-400 font-normal">(Optional)</span>
+            </label>
+            <input
+              type="text"
+              placeholder="e.g. +91 98765 43210"
+              value={contactInfo}
+              onChange={(e) => setContactInfo(e.target.value)}
+              className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-lg text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 transition-all"
+            />
           </div>
 
           {/* ४. Detailed Description */}
