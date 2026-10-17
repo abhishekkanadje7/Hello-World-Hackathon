@@ -178,7 +178,7 @@ def seed_users_and_tickets(conn):
     now_dt = datetime.utcnow()
     
     # --- ADMIN BOOTSTRAP ---
-    cursor.execute("SELECT id FROM users WHERE role = 'admin'")
+    cursor.execute("SELECT id FROM users WHERE email = ? OR id = 'usr-admin-01'", (ADMIN_EMAIL.lower(),))
     admin_row = cursor.fetchone()
     if not admin_row:
         admin_id = "usr-admin-01"
@@ -187,7 +187,7 @@ def seed_users_and_tickets(conn):
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             admin_id,
-            "System Administrator",
+            "Abhishek Kanadje (Admin)",
             ADMIN_EMAIL.lower(),
             hash_password(ADMIN_PASSWORD),
             "admin",
@@ -198,6 +198,11 @@ def seed_users_and_tickets(conn):
             0,
             now_iso
         ))
+    else:
+        cursor.execute("""
+        UPDATE users SET email = ?, name = ?, password_hash = ?, role = 'admin', is_active = 1 WHERE id = 'usr-admin-01' OR email = ?
+        """, (ADMIN_EMAIL.lower(), "Abhishek Kanadje (Admin)", hash_password(ADMIN_PASSWORD), ADMIN_EMAIL.lower()))
+
         
     # --- DEMO ACCOUNTS ---
     demo_accounts = [

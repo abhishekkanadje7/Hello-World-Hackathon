@@ -1,7 +1,7 @@
 // Client-Side Simulation & Demo Engine for GitHub Pages & Offline Evaluator Demonstrations
 // Automatically activates when running on static hosting (like GitHub Pages) or when backend API is unreachable.
 
-const STORAGE_KEY = 'triagex_demo_db_v1';
+const STORAGE_KEY = 'triagex_demo_db_v2';
 
 function getInitialState() {
   const now = new Date();
@@ -13,8 +13,20 @@ function getInitialState() {
     users: [
       {
         id: 'usr-admin-01',
+        name: 'Abhishek Kanadje (Admin)',
+        email: 'abhishekkanadje7@gmail.com',
+        password: 'Abhi*2007...',
+        role: 'admin',
+        agent_level: null,
+        customer_type: null,
+        is_active: 1,
+        must_change_password: 0
+      },
+      {
+        id: 'usr-admin-legacy',
         name: 'Admin Administrator',
         email: 'admin@triagex.com',
+        password: 'Admin@123',
         role: 'admin',
         agent_level: null,
         customer_type: null,

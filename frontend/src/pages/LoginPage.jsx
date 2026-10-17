@@ -1,7 +1,8 @@
 // =============================================================================
-// TriageX - Professional Enterprise Login Page
-// कमेंट: स्वच्छ, कॉर्पोरेट लॉगिन पेज. 
-// अॅडमिनसाठी सोपे 1-क्लिक एक्सेस आणि कस्टोडियन्स/एजंट्ससाठी सुरक्षित ऑथेंटिकेशन.
+// TriageX - Professional Customer & Staff Login Page
+// कमेंट: ग्राहक (Customer) आणि स्टाफ लॉगिन पृष्ठ.
+// यामध्ये कोणताही ऑटो-फिल बॉक्स नाही; स्वच्छ आणि मोकळे इनपुट बॉक्सेस आहेत.
+// अॅडमिन (abhishekkanadje7@gmail.com / Abhi*2007...) किंवा ग्राहक स्वतःच्या खात्यातून लॉगिन करू शकतात.
 // =============================================================================
 
 import React, { useState } from 'react';
@@ -15,16 +16,14 @@ import {
   ShieldCheck, 
   ArrowRight,
   AlertCircle,
-  KeyRound,
-  UserPlus,
-  CheckCircle2
+  LogIn
 } from 'lucide-react';
 
 export default function LoginPage() {
   const { login, sessionExpiredMsg } = useAuth();
   const navigate = useNavigate();
 
-  // इनपुट स्टेट्स (सुरुवातीला पूर्णपणे रिकामे - कोणतेही नाव किंवा ईमेल आधीच भरलेले नाही)
+  // इनपुट स्टेट्स (सुरुवातीला पूर्णपणे रिकामे)
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -45,8 +44,10 @@ export default function LoginPage() {
         navigate('/customer/tickets');
       } else if (user.role === 'agent') {
         navigate('/agent');
-      } else {
+      } else if (user.role === 'admin') {
         navigate('/admin');
+      } else {
+        navigate('/customer/tickets');
       }
     } catch (err) {
       setError(err.message || 'Login failed. Please check your email and password.');
@@ -55,24 +56,17 @@ export default function LoginPage() {
     }
   };
 
-  // हॅकाथॉन इव्हॅल्युएटर्ससाठी 1-क्लिक अॅडमिन क्रेडेन्शियल्स भरणे
-  const fillAdminCredentials = () => {
-    setEmail('admin@triagex.com');
-    setPassword('Admin@123');
-    setError(null);
-  };
-
   return (
     <div className="min-h-[calc(100vh-100px)] flex flex-col justify-center py-10 px-4 sm:px-6 lg:px-8 bg-slate-50">
       <div className="sm:mx-auto sm:w-full sm:max-w-md text-center">
         <div className="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-blue-600 shadow-md shadow-blue-500/20 text-white mb-3">
-          <KeyRound className="w-6 h-6" />
+          <LogIn className="w-6 h-6" />
         </div>
         <h2 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900">
-          Sign in to your account
+          Customer & Staff Sign In
         </h2>
         <p className="mt-1.5 text-sm text-slate-500">
-          Access your AI Support Triage & Sentiment Workspace
+          Sign in to view support tickets, track SLA countdowns, or manage portal
         </p>
       </div>
 
@@ -86,11 +80,11 @@ export default function LoginPage() {
             </div>
           )}
 
-          {/* लॉगिन फॉर्म */}
+          {/* मुख्य लॉगिन फॉर्म */}
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
               <label className="text-xs font-semibold text-slate-700 block mb-1.5">
-                Work Email Address
+                Email Address
               </label>
               <div className="relative">
                 <Mail className="w-4 h-4 absolute left-3.5 top-3 text-slate-400" />
@@ -139,7 +133,7 @@ export default function LoginPage() {
               className="w-full mt-2 py-2.5 px-4 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg text-sm shadow-sm hover:shadow transition-all flex items-center justify-center space-x-2 disabled:opacity-50"
             >
               {loading ? (
-                <span>Authenticating...</span>
+                <span>Signing in...</span>
               ) : (
                 <>
                   <span>Sign In</span>
@@ -149,45 +143,24 @@ export default function LoginPage() {
             </button>
           </form>
 
-          {/* Evaluator Helper - Quick Admin Login Fill */}
-          <div className="pt-4 border-t border-slate-100">
-            <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 flex items-center justify-between">
-              <div className="text-left">
-                <div className="text-xs font-bold text-slate-800 flex items-center space-x-1">
-                  <span>Evaluation Admin Access</span>
-                </div>
-                <div className="text-[11px] text-slate-500 mt-0.5 font-mono">
-                  admin@triagex.com
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={fillAdminCredentials}
-                className="px-3 py-1.5 text-xs font-semibold bg-white hover:bg-blue-50 text-blue-600 border border-slate-200 hover:border-blue-300 rounded-lg shadow-2xs transition-all"
-              >
-                Auto-Fill
-              </button>
-            </div>
-          </div>
-
-          {/* Customer Registration Call to Action */}
-          <div className="text-center pt-2">
+          {/* Customer Registration Link */}
+          <div className="text-center pt-3 border-t border-slate-100">
             <p className="text-xs text-slate-600">
-              Don't have a customer account?{' '}
+              New customer?{' '}
               <Link 
                 to="/register" 
                 className="font-bold text-blue-600 hover:text-blue-700 hover:underline inline-flex items-center space-x-1"
               >
-                <span>Register as Customer</span>
+                <span>Register customer account</span>
               </Link>
             </p>
           </div>
         </div>
 
-        {/* Security & Agent Provisioning Notice */}
+        {/* Security Notice */}
         <div className="mt-6 text-center space-y-2">
           <p className="text-xs text-slate-400">
-            ℹ️ <strong className="text-slate-600">Note for Support Agents:</strong> Agent accounts are provisioned exclusively by the Administrator from the Admin Panel. Generated credentials are sent directly to your registered email.
+            🔒 Protected by End-to-End Session Security & Role-Based Access Control.
           </p>
           <div className="inline-flex items-center space-x-1 text-[11px] text-slate-400">
             <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />

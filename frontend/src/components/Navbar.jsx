@@ -123,13 +123,13 @@ export default function Navbar({ wsConnected }) {
                     isActive('/login') ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
                   }`}
                 >
-                  Admin Login
+                  Sign In
                 </Link>
                 <Link
                   to="/register"
                   className="px-3.5 py-2 rounded-lg text-xs font-semibold bg-blue-600 hover:bg-blue-700 text-white shadow-sm transition-all"
                 >
-                  Customer Register
+                  Register
                 </Link>
               </>
             ) : user.role === 'customer' ? (

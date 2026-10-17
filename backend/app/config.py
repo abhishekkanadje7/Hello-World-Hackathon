@@ -24,5 +24,6 @@ JWT_SECRET = os.getenv("JWT_SECRET", "triagex-jwt-secret-demo-key-2026")
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRATION_HOURS = 12
 
-ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "admin@triagex.com").strip().lower()
-ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "Admin@123")
+ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "abhishekkanadje7@gmail.com").strip().lower()
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "Abhi*2007...")
+

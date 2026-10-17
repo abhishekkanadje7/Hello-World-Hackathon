@@ -67,7 +67,7 @@ export default function LandingPage() {
             to="/login"
             className="w-full sm:w-auto px-6 py-3 rounded-lg bg-white hover:bg-slate-50 text-slate-700 font-semibold text-sm border border-slate-300 shadow-2xs transition-all flex items-center justify-center space-x-2"
           >
-            <span>Admin Sign In</span>
+            <span>Sign In</span>
           </Link>
         </div>
       </section>
