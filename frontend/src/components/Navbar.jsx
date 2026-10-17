@@ -101,23 +101,23 @@ export default function Navbar({ wsConnected }) {
           {/* Nav Links according to Role */}
           <nav className="flex items-center space-x-1.5">
             {!user ? (
-              // Logged Out
-              <>
-                <Link
-                  to="/"
-                  className={`px-3.5 py-2 rounded-lg text-xs font-semibold transition-all ${
-                    isActive('/') ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-                  }`}
-                >
-                  Home
-                </Link>
+              // Logged Out: होम बटण वगळून स्वच्छ Sign In आणि Register बटणे
+              <div className="flex items-center space-x-2">
                 <Link
                   to="/login"
-                  className="px-4 py-2 rounded-lg text-xs font-semibold bg-blue-600 hover:bg-blue-700 text-white shadow-sm transition-all"
+                  className={`px-3.5 py-2 rounded-lg text-xs font-semibold transition-all ${
+                    isActive('/login') ? 'bg-slate-100 text-slate-900 font-bold' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                  }`}
                 >
                   Sign In
                 </Link>
-              </>
+                <Link
+                  to="/register"
+                  className="px-4 py-2 rounded-lg text-xs font-semibold bg-blue-600 hover:bg-blue-700 text-white shadow-sm transition-all"
+                >
+                  Register
+                </Link>
+              </div>
             ) : user.role === 'customer' ? (
               // Customer Role
               <>

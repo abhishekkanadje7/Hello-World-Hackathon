@@ -140,10 +140,16 @@ export default function LoginPage() {
             </button>
           </form>
 
-          {/* Platform Access Note */}
+          {/* Customer Registration Link */}
           <div className="text-center pt-3 border-t border-slate-100">
-            <p className="text-xs text-slate-500">
-              Need account assistance or onboarding? Contact your system administrator.
+            <p className="text-xs text-slate-600">
+              New customer?{' '}
+              <Link
+                to="/register"
+                className="font-bold text-blue-600 hover:text-blue-700 hover:underline"
+              >
+                Register here
+              </Link>
             </p>
           </div>
         </div>
