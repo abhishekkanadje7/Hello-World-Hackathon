@@ -107,29 +107,6 @@ The codebase is organized with clear separation of concerns across 4 core langua
 ├── deploy-gh-pages.sh           # Automated deployment pipeline to GitHub Pages
 └── test_suite.py                # Consolidated master verification test suite (100% pass)
 ```
-
----
-
-## 🔐 Authentication, Credentials & Security Model
-
-TriageX enforces an enterprise-grade security posture:
-- **Admin Bootstrap**: Exactly **one fixed admin account** is initialized on first boot.
-- **Customer Self-Registration**: Public users can register freely at `/register`. Client attempts to inject `admin` or `VIP` roles are sanitized on the server—all public registrations are locked to `role="customer"` and `customer_type="Regular"`.
-- **Agent Provisioning**: Support agents **cannot self-register**. They are created exclusively by the Admin, who generates a secure temporary password with mandatory change-on-first-login (`must_change_password`).
-- **Account Lockout**: 5 consecutive failed login attempts locks the account for 5 minutes.
-- **Confidential Internal Notes**: Support agents can post internal notes (`is_internal = true`) that are strictly filtered out from customer views.
-
-### 🔑 Demo Accounts & Credentials
-
-| Role | Name | Email | Password | Access Scope |
-|---|---|---|---|---|
-| **System Admin** | Abhishek Kanadje (Admin) | `abhishekkanadje7@gmail.com` | `Abhi*2007...` | Full console, weight tuning, user provisioning, CSV exports |
-| **Senior Agent** | Pooja Sharma | `senior@triagex.com` | `Agent@123` | Critical tier tickets ($\ge 70$), claim/reassign, staff notes |
-| **Standard Agent** | Vikas Patil | `agent@triagex.com` | `Agent@123` | Standard ($40-69$) & Routine ($<40$) tickets, claim/reply |
-| **VIP Customer** | Abhishek Kanadje | `customer@triagex.com` | `Customer@123` | VIP Plan (100 baseline pts), 15-min SLA guarantee |
-| **Premium Customer** | Neha Kulkarni | `neha@startuply.io` | `Customer@123` | Premium Plan (60 baseline pts), 1-hour SLA |
-| **Regular Customer** | Siddharth Joshi | `siddharth@gmail.com` | `Customer@123` | Regular Plan (20 baseline pts), 4-hour SLA |
-
 ---
 
 ## 💻 Technology Stack
