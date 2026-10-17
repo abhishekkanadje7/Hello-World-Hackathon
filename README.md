@@ -59,7 +59,11 @@
 
 ### Step 2: Run Automated Backend Tests
 ```bash
+# Run C1 Suite (13 tests)
 ./venv/bin/python3 test_c1_backend.py
+
+# Run C2 Suite (14 tests)
+./venv/bin/python3 test_c2_backend.py
 ```
 
 ---
@@ -75,4 +79,8 @@
 | `/customer/new` | Customer | Submit ticket with character counter & 3 quick example presets |
 | `/customer/tickets` | Customer | Table of customer's own tickets with status and priority badges |
 | `/customer/tickets/:id` | Customer | Ticket workspace, SLA target, and conversation thread with reply box |
+| `/agent` | Agent, Admin | Agent triage queue with 4 stat cards, 3 tabs, SLA countdown, and 1-click claim |
+| `/agent/tickets/:id` | Agent, Admin | Agent ticket workspace with internal staff notes, status transitions, and KB insertion |
+| `/admin` | Admin | Full Admin Console (Overview analytics, All Tickets + CSV export, Users & Agents, KB FAQs, Engine Settings & Sliders, System Audit Log) |
 | `/dashboard` | Agent, Admin | Live priority queue, explainable AI modal, and admin controls |
+
