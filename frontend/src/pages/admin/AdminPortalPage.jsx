@@ -353,51 +353,38 @@ export default function AdminPortalPage() {
       {/* Left Sidebar */}
       <aside className="w-full md:w-64 bg-slate-900/90 border-r border-slate-800/80 p-5 flex flex-col justify-between shrink-0">
         <div>
-          <div className="flex items-center space-x-2 mb-8">
-            <span className="w-8 h-8 rounded-lg bg-red-600 flex items-center justify-center font-bold text-white shadow-md shadow-red-600/30">
-              TX
-            </span>
-            <div>
-              <h2 className="text-sm font-bold text-white tracking-tight">Admin Console</h2>
-              <span className="text-[11px] text-red-400 font-mono">Master RBAC</span>
-            </div>
+          <div className="mb-8 border-b border-slate-800 pb-4">
+            <h2 className="text-base font-bold text-white tracking-tight">Admin Console</h2>
+            <span className="text-[11px] text-slate-400">Settings & Telemetry</span>
           </div>
 
-          <nav className="space-y-1.5 text-xs font-semibold">
+          <nav className="space-y-1 text-xs font-medium">
             {[
-              { id: 'overview', label: 'Overview Analytics', icon: '📊' },
-              { id: 'tickets', label: 'All Tickets & CSV', icon: '🎫' },
-              { id: 'users', label: 'Users & Agents', icon: '👥' },
-              { id: 'kb', label: 'Knowledge Base FAQs', icon: '📚' },
-              { id: 'settings', label: 'Engine & Thresholds', icon: '⚙️' },
-              { id: 'audit', label: 'System Audit Log', icon: '📜' },
+              { id: 'overview', label: 'Overview Analytics' },
+              { id: 'tickets', label: 'All Tickets & CSV' },
+              { id: 'users', label: 'Users & Agents' },
+              { id: 'kb', label: 'Knowledge Base FAQs' },
+              { id: 'settings', label: 'Engine & Thresholds' },
+              { id: 'audit', label: 'System Audit Log' },
             ].map(item => (
               <button
                 key={item.id}
                 onClick={() => setActiveSection(item.id)}
-                className={`w-full flex items-center space-x-3 px-3 py-2.5 rounded-xl transition-all ${
+                className={`w-full flex items-center px-3.5 py-2.5 rounded-lg transition-all text-left ${
                   activeSection === item.id
-                    ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/30'
+                    ? 'bg-blue-600 text-white font-semibold shadow-sm'
                     : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
                 }`}
               >
-                <span className="text-base">{item.icon}</span>
                 <span>{item.label}</span>
               </button>
             ))}
           </nav>
         </div>
 
-        <div className="pt-6 border-t border-slate-800/80 mt-6 space-y-2">
-          <button
-            onClick={handleResetDemoDb}
-            className="w-full py-2 px-3 rounded-xl text-xs font-semibold bg-red-950/60 hover:bg-red-900/80 text-red-300 border border-red-800/60 transition-colors flex items-center justify-center space-x-1.5"
-          >
-            <span>🔄</span>
-            <span>Reset Demo Data</span>
-          </button>
-          <div className="text-[10px] text-slate-500 text-center font-mono">
-            TriageX 2.1 Enterprise
+        <div className="pt-4 border-t border-slate-800/80 mt-6">
+          <div className="text-[11px] text-slate-500 font-medium">
+            Production Environment
           </div>
         </div>
       </aside>
@@ -407,13 +394,13 @@ export default function AdminPortalPage() {
         {/* Alerts */}
         {errorMsg && (
           <div className="mb-6 p-4 rounded-xl bg-red-950/60 border border-red-800 text-red-200 text-sm flex items-center justify-between">
-            <span>⚠️ {errorMsg}</span>
+            <span>{errorMsg}</span>
             <button onClick={() => setErrorMsg('')} className="text-xs text-red-400">Dismiss</button>
           </div>
         )}
         {successMsg && (
           <div className="mb-6 p-4 rounded-xl bg-emerald-950/60 border border-emerald-800 text-emerald-200 text-sm flex items-center justify-between">
-            <span>✅ {successMsg}</span>
+            <span>{successMsg}</span>
             <button onClick={() => setSuccessMsg('')} className="text-xs text-emerald-400">Dismiss</button>
           </div>
         )}
@@ -430,7 +417,7 @@ export default function AdminPortalPage() {
                 onClick={loadAnalytics}
                 className="px-3.5 py-1.5 rounded-lg text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition-colors"
               >
-                🔄 Refresh Metrics
+                Refresh Metrics
               </button>
             </div>
 
