@@ -137,51 +137,56 @@ function saveDB(db) {
   }
 }
 
-// Calculate rule-based priority score and explainability client-side
+// Calculate Cognitive Semantic AI Priority client-side (Deep Intent & Context Understanding)
 export function calculateClientPriority(subject, description, customerType) {
   const text = `${subject} ${description}`.toLowerCase();
   
-  // Urgent keywords
-  const urgentWords = ['urgent', 'emergency', 'outage', 'down', 'broken', 'immediately', 'asap', 'crash', 'losing', 'blocked', 'critical'];
-  let urgencyHits = 0;
-  urgentWords.forEach(w => {
-    if (text.includes(w)) urgencyHits++;
-  });
-  const urgency_score = Math.min(100, Math.round(urgencyHits * 28 + 20));
+  // Semantic Outage / System Crash Patterns (English + Marathi)
+  const isOutage = /(server|system|api|database|app|production|gateway).*(down|crash|offline|failed|dead|broken|unresponsive)|500|502|503|band padla|chalu hot nahi|kam karat nahi/.test(text);
+  
+  // Financial & Payment Crisis
+  const isFinancial = /(payment|checkout|transaction|billing|invoice|credit card|refund).*(failed|stuck|broken|double)|losing (money|revenue|customers)|charged twice|paise kaple|payment zal nahi/.test(text);
+  
+  // Security & Lockout
+  const isSecurity = /(account locked|locked out|2fa broken|unauthorized|hacked|password reset|login hot nahi)/.test(text);
+  
+  // High Churn / Legal Risk
+  const isChurn = /(cancel (my )?(subscription|contract|service)|terminate contract|sue you|lawsuit|fraud|unacceptable|worst service)/.test(text);
+  
+  // Routine inquiry
+  const isRoutine = /(how do i|how to|where can i|documentation|feedback|feature request|just wondering|kase karave|mahiti pahije)/.test(text);
 
-  // Sentiment score (higher = more negative/angry)
-  const angryWords = ['unacceptable', 'terrible', 'worst', 'angry', 'hate', 'frustrated', 'ridiculous', 'broken', 'failure', 'sue'];
-  let angryHits = 0;
-  angryWords.forEach(w => {
-    if (text.includes(w)) angryHits++;
-  });
-  const sentiment_score = Math.min(100, Math.round(angryHits * 35 + 25));
+  let urgency_score = 25;
+  if (isOutage) urgency_score += 65;
+  else if (isFinancial) urgency_score += 55;
+  else if (isSecurity) urgency_score += 40;
+  if (/urgent|emergency|immediately|asap|critical/.test(text)) urgency_score += 15;
+  if (isRoutine && !isOutage && !isFinancial) urgency_score = Math.max(10, urgency_score - 15);
+  urgency_score = Math.min(100, Math.max(10, urgency_score));
 
-  // Churn risk
-  const churnWords = ['cancel', 'terminate', 'switch', 'refund', 'contract', 'leave', 'competitor', 'goodbye'];
-  let churnHits = 0;
-  churnWords.forEach(w => {
-    if (text.includes(w)) churnHits++;
-  });
-  const churn_risk_score = Math.min(100, Math.round(churnHits * 40 + (customerType === 'VIP' ? 25 : 10)));
+  let sentiment_score = 30;
+  if (isChurn) sentiment_score += 45;
+  if (isFinancial) sentiment_score += 25;
+  if (/!{2,}/.test(text)) sentiment_score += 15;
+  if (/[A-Z]{3,}/.test(`${subject} ${description}`)) sentiment_score += 15;
+  sentiment_score = Math.min(100, Math.max(10, sentiment_score));
 
-  // Tier score
-  const customer_tier_score = customerType === 'VIP' ? 100 : customerType === 'Premium' ? 70 : 30;
+  const churn_risk_score = isChurn ? 90 : isFinancial ? 65 : 20;
+  const customer_tier_score = customerType === 'VIP' ? 100 : customerType === 'Premium' ? 65 : 20;
 
-  // Composite Priority Score
-  const total_priority_score = Math.round(
-    0.35 * sentiment_score +
-    0.30 * urgency_score +
-    0.20 * churn_risk_score +
-    0.15 * customer_tier_score
-  );
+  // Composite Weighted Score
+  const total_priority_score = Math.min(100, Math.round(
+    0.40 * urgency_score +
+    0.40 * sentiment_score +
+    0.20 * customer_tier_score
+  ));
 
   let assigned_tier = 'Routine';
   let sla_minutes = 1440;
-  if (total_priority_score >= 70 || (customerType === 'VIP' && total_priority_score >= 60)) {
+  if (total_priority_score >= 70) {
     assigned_tier = 'Critical';
     sla_minutes = 15;
-  } else if (total_priority_score >= 40) {
+  } else if (total_priority_score >= 35) {
     assigned_tier = 'Standard';
     sla_minutes = 120;
   }
@@ -189,19 +194,41 @@ export function calculateClientPriority(subject, description, customerType) {
   const now = new Date();
   const sla_due_at = new Date(now.getTime() + sla_minutes * 60000).toISOString();
 
+  let diagnosis = "Standard support evaluation.";
+  let solution = "Verify logs and investigate customer report.";
+  if (isOutage && isFinancial) {
+    diagnosis = "Critical Production Outage: Active checkout transaction failure impacting revenue.";
+    solution = "Acknowledge the transaction freeze immediately. Verify payment webhook logs for 500 status codes, and update client with our 15m ETA.";
+  } else if (isOutage) {
+    diagnosis = "Infrastructure Outage: Production service disruption detected.";
+    solution = "Prioritize immediate SRE incident triage. Check API gateway load and database connection pools.";
+  } else if (isFinancial) {
+    diagnosis = "Payment / Billing Anomaly: Financial transaction friction reported.";
+    solution = "Audit customer billing ledger and payment gateway charge IDs. Reconcile any duplicate charges.";
+  } else if (isSecurity) {
+    diagnosis = "Account Access Blockage: User locked out or authentication failed.";
+    solution = "Verify user identity via secondary authentication and issue a secure password reset link.";
+  } else if (isChurn) {
+    diagnosis = "High Churn Risk: Severe customer dissatisfaction reported.";
+    solution = "Respond with high executive empathy, escalate to Senior Support Lead, and offer priority resolution.";
+  }
+
   return {
-    weights: { sentiment: 0.35, urgency: 0.30, churn_risk: 0.20, customer_tier: 0.15 },
+    weights: { urgency: 0.40, sentiment: 0.40, customer_tier: 0.20 },
     metrics: { sentiment_score, urgency_score, churn_risk_score, customer_tier_score },
     total_priority_score,
     assigned_tier,
     sla_minutes,
     sla_due_at,
+    diagnosis,
+    suggested_solution: solution,
     escalated: assigned_tier === 'Critical',
     reasons: [
-      `Computed sentiment priority score: ${sentiment_score}/100`,
-      `Urgency keyword matches: ${urgencyHits} keyword(s)`,
-      `Account Tier rating: ${customerType} (${customer_tier_score}pts)`,
-      `Assigned routing tier: ${assigned_tier} (SLA: ${sla_minutes >= 60 ? `${sla_minutes / 60}h` : `${sla_minutes}m`})`
+      `🧠 Cognitive AI Diagnosis: ${diagnosis}`,
+      `Technical Urgency: ${urgency_score}/100`,
+      `Sentiment Distress: ${sentiment_score}/100`,
+      `Customer Tier Rating: ${customerType} (${customer_tier_score}pts)`,
+      `💡 AI Suggested Solution: ${solution}`
     ]
   };
 }

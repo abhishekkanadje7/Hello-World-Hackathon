@@ -1,3 +1,11 @@
+# =============================================================================
+# TriageX - Cognitive Semantic Understanding AI Engine
+# कमेंट: खऱ्या अर्थाने संदर्भ (Context), भावना (Sentiment), तांत्रिक गांभीर्य (Technical Severity), 
+# आणि बिझनेस रिस्क समजून घेणारे प्रगत AI इंजिन.
+# इंग्रजी व मराठी/हिंग्लिश दोन्ही भाषांमधील समस्या अचूक समजून घेऊन
+# आपोआप प्रायॉरिटी स्कोअर, राऊटिंग कारण आणि एजंटसाठी तयार उत्तर (AI Solution) बनवते.
+# =============================================================================
+
 import re
 from typing import Dict, Any, List, Tuple, Optional
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
@@ -6,110 +14,145 @@ from .models import ExplainabilityBreakdown, ExplainabilityItem
 
 analyzer = SentimentIntensityAnalyzer()
 
-# High frustration / hostility booster words
-FRUSTRATION_KEYWORDS = {
-    "terrible": 15, "awful": 15, "horrible": 15, "worst": 20, "unacceptable": 25,
-    "furious": 25, "angry": 15, "disgusted": 20, "disaster": 25, "ruined": 20,
-    "waste": 15, "scam": 30, "fraud": 30, "sue": 30, "lawsuit": 35,
-    "cancel my subscription": 25, "cancel contract": 30, "incompetent": 20,
-    "ridiculous": 15, "pathetic": 20, "broken promise": 20, "hate": 15
-}
+# =============================================================================
+# १. सखोल सिमेंटिक पॅटर्न्स (Semantic Domain & Intent Patterns)
+# =============================================================================
 
-# Urgency keywords and point weights
-URGENCY_KEYWORDS = {
-    # Outage / Catastrophic
-    "down": 30, "outage": 35, "server down": 45, "production down": 50,
-    "crashed": 35, "crash": 30, "offline": 30, "data loss": 45, "corrupted": 35,
-    "breach": 40, "hacked": 45, "security vulnerability": 40,
-    
-    # Financial / Business Impact
-    "payment failed": 35, "charged twice": 30, "double charged": 35,
-    "losing money": 40, "losing customers": 40, "cannot checkout": 35,
-    "revenue": 25, "payroll": 35, "blocked": 25,
-    
-    # Temporal Urgency
-    "urgent": 25, "emergency": 35, "asap": 25, "immediately": 30,
-    "right now": 25, "critical": 30, "deadline": 25, "time-sensitive": 25
-}
+CRITICAL_OUTAGE_PATTERNS = [
+    r"\b(server|service|system|api|database|app|website|gateway|production)\b.*\b(down|crashed|offline|dead|stopped|failed|unresponsive|unavailable)\b",
+    r"\b(500|502|503|504)\b",
+    r"\b(production\s+outage|total\s+outage|major\s+outage|catastrophic|system\s+crash)\b",
+    r"\b(data\s+loss|database\s+corrupted|corrupted\s+data|data\s+leak|security\s+breach|hacked|ransomware)\b",
+    r"\b(band\s+padla|chalu\s+hot\s+nahi|crash\s+zala|band\s+aahe|kam\s+karat\s+nahi|thapla)\b" # मराठी/हिंग्लिश
+]
 
-# Routine / Low urgency keywords
-ROUTINE_KEYWORDS = {
-    "how do i": -20, "how to": -15, "where can i": -15, "just wondering": -20,
-    "general inquiry": -20, "curious": -15, "documentation": -15, "feedback": -10,
-    "suggestion": -10, "feature request": -10, "thank you": -15
-}
+FINANCIAL_IMPACT_PATTERNS = [
+    r"\b(payment|checkout|transaction|charge|billing|invoice|credit\s+card|subscription|refund)\b.*\b(failed|stuck|error|broken|rejected|double|twice)\b",
+    r"\b(losing\s+(money|revenue|customers|clients|thousands|millions|sales))\b",
+    r"\b(charged\s+twice|double\s+charged|unauthorized\s+charge|money\s+deducted)\b",
+    r"\b(cannot\s+checkout|unable\s+to\s+pay|payment\s+gateway\s+down)\b",
+    r"\b(paise\s+kaple|payment\s+zal\s+nahi|paise\s+adakle|checkout\s+hot\s+nahi)\b" # मराठी
+]
 
-def analyze_sentiment_and_frustration(text: str) -> Tuple[float, float, List[str]]:
-    scores = analyzer.polarity_scores(text)
-    compound = scores['compound']
+SECURITY_ACCESS_PATTERNS = [
+    r"\b(account\s+locked|locked\s+out|access\s+denied|unauthorized|2fa\s+broken|mfa\s+failed|compromised|hacked)\b",
+    r"\b(password\s+reset\s+not\s+working|cannot\s+login|login\s+failed|credentials)\b",
+    r"\b(login\s+hot\s+nahi|account\s+lock\s+zala)\b" # मराठी
+]
+
+BUSINESS_CHURN_PATTERNS = [
+    r"\b(cancel\s+(my\s+)?(subscription|contract|service|plan|account))\b",
+    r"\b(terminate\s+contract|switch(ing)?\s+to\s+competitor|leaving\s+your\s+platform)\b",
+    r"\b(lawsuit|legal\s+action|sue\s+you|call\s+my\s+lawyer|fraud|scam|unacceptable)\b",
+    r"\b(disaster|worst\s+experience|terrible\s+service|incompetent|pathetic)\b"
+]
+
+ROUTINE_INQUIRY_PATTERNS = [
+    r"\b(how\s+do\s+i|how\s+to|where\s+can\s+i|can\s+you\s+explain|documentation|guide)\b",
+    r"\b(just\s+wondering|general\s+inquiry|curious|quick\s+question|feedback|suggestion)\b",
+    r"\b(feature\s+request|nice\s+to\s+have|inquiry|thank\s+you|thanks)\b",
+    r"\b(kase\s+karave|mahiti\s+pahije|sangashil\s+ka)\b" # मराठी
+]
+
+# =============================================================================
+# २. कॉग्निटिव्ह समज आणि स्कोअरिंग इंजिन (Cognitive Semantic Analyzer)
+# =============================================================================
+
+def perform_cognitive_analysis(text: str) -> Dict[str, Any]:
+    """
+    संपूर्ण मजकूर वाचून त्याचा तांत्रिक, आर्थिक आणि मानसिक संदर्भ समजून घेते.
+    """
+    text_clean = text.strip()
+    text_lower = text_clean.lower()
+
+    # VADER मूलभूत भावना
+    vader_res = analyzer.polarity_scores(text_clean)
+    compound = vader_res["compound"]
+
+    # डोमेन वर्गीकरण आणि गांभीर्य तपासणी
+    detected_domains = []
+    is_critical_outage = any(re.search(p, text_lower) for p in CRITICAL_OUTAGE_PATTERNS)
+    is_financial = any(re.search(p, text_lower) for p in FINANCIAL_IMPACT_PATTERNS)
+    is_security = any(re.search(p, text_lower) for p in SECURITY_ACCESS_PATTERNS)
+    is_churn_risk = any(re.search(p, text_lower) for p in BUSINESS_CHURN_PATTERNS)
+    is_routine = any(re.search(p, text_lower) for p in ROUTINE_INQUIRY_PATTERNS)
+
+    if is_critical_outage: detected_domains.append("System Infrastructure Outage")
+    if is_financial: detected_domains.append("Financial & Revenue Failure")
+    if is_security: detected_domains.append("Account Security & Access")
+    if is_churn_risk: detected_domains.append("High Churn / Contract Risk")
+    if is_routine: detected_domains.append("Routine Informational Inquiry")
+
+    # १. Urgency Score (0 - 100)
+    urgency = 20.0  # Base
+    if is_critical_outage:
+        urgency += 70.0
+    elif is_financial:
+        urgency += 55.0
+    elif is_security:
+        urgency += 45.0
     
-    # Linear interpolation: compound -1 => 100, compound 1 => 0
+    if "urgent" in text_lower or "emergency" in text_lower or "immediately" in text_lower or "asap" in text_lower:
+        urgency += 15.0
+    if is_routine and not (is_critical_outage or is_financial):
+        urgency = max(10.0, urgency - 15.0)
+
+    # २. Frustration Score (0 - 100)
+    # Compound: -1 (very negative) => 100, +1 (positive) => 0
     base_frustration = ((1.0 - compound) / 2.0) * 100.0
-    
-    text_lower = text.lower()
-    detected_keywords = []
-    keyword_boost = 0
-    
-    for kw, boost in FRUSTRATION_KEYWORDS.items():
-        if re.search(r'\b' + re.escape(kw) + r'\b', text_lower):
-            detected_keywords.append(kw)
-            keyword_boost += boost
-            
-    # Check for excessive exclamation marks
-    exclamation_count = text.count('!')
-    if exclamation_count >= 3:
-        keyword_boost += 12
-        detected_keywords.append(f"{exclamation_count}x exclamation marks")
-    elif exclamation_count >= 1:
-        keyword_boost += 4
-        
-    # Check for ALL CAPS shouting (words with len >= 3)
-    words = re.findall(r'\b[A-Z]{3,}\b', text)
-    if len(words) >= 2:
-        keyword_boost += 15
-        detected_keywords.append(f"ALL-CAPS shouting ({', '.join(words[:3])})")
-        
-    total_frustration = min(100.0, max(0.0, base_frustration + (keyword_boost * 0.5)))
-    return round(total_frustration, 1), round(compound, 3), detected_keywords
+    frustration_boost = 0.0
 
-def analyze_urgency(text: str) -> Tuple[float, List[str]]:
-    text_lower = text.lower()
-    detected_urgency_kws = []
-    urgency_points = 15.0  # baseline
+    if is_churn_risk:
+        frustration_boost += 35.0
+    if is_financial:
+        frustration_boost += 15.0
     
-    for kw, pts in URGENCY_KEYWORDS.items():
-        if re.search(r'\b' + re.escape(kw) + r'\b', text_lower):
-            detected_urgency_kws.append(kw)
-            urgency_points += pts
-            
-    for kw, reduction in ROUTINE_KEYWORDS.items():
-        if kw in text_lower:
-            urgency_points += reduction
-            
-    if "!" in text:
-        urgency_points += 5
-    if any(re.findall(r'\b(NOW|URGENT|CRITICAL|DOWN|EMERGENCY)\b', text)):
-        urgency_points += 15
-        
-    final_urgency = min(100.0, max(0.0, urgency_points))
-    return round(final_urgency, 1), detected_urgency_kws
+    # उद्गारवाचक चिन्हे व मोठ्या अक्षरांचा राग (Exclamation & ALL CAPS)
+    excl_count = text_clean.count("!")
+    if excl_count >= 3: frustration_boost += 15.0
+    elif excl_count >= 1: frustration_boost += 5.0
 
-def calculate_priority_score(
-    frustration_score: float,
-    urgency_score: float,
-    customer_value_score: float,
-    weights = CURRENT_WEIGHTS
-) -> int:
-    total_w = weights.frustration_weight + weights.urgency_weight + weights.customer_value_weight
-    if total_w <= 0:
-        total_w = 1.0
-        
-    w_f = weights.frustration_weight / total_w
-    w_u = weights.urgency_weight / total_w
-    w_v = weights.customer_value_weight / total_w
-    
-    score = (frustration_score * w_f) + (urgency_score * w_u) + (customer_value_score * w_v)
-    return int(round(min(100.0, max(0.0, score))))
+    caps_words = re.findall(r"\b[A-Z]{3,}\b", text_clean)
+    if len(caps_words) >= 2: frustration_boost += 15.0
+
+    frustration = min(100.0, max(5.0, base_frustration + frustration_boost))
+    urgency = min(100.0, max(5.0, urgency))
+
+    # ३. समस्येचा मुख्य सारांश (Root Problem Summary)
+    if is_critical_outage and is_financial:
+        key_issue = "Critical production outage directly impacting customer payment transactions."
+        suggested_solution = "Acknowledge the transaction freeze immediately. Verify payment gateway logs for 500 status codes, and update the customer with our 15-minute engineering ETA."
+    elif is_critical_outage:
+        key_issue = "Production infrastructure or service disruption causing critical system downtime."
+        suggested_solution = "Prioritize immediate SRE incident triage. Check API gateway load and database connection pools, then provide the customer with ongoing status updates."
+    elif is_financial:
+        key_issue = "Billing/payment processing anomaly with direct financial customer friction."
+        suggested_solution = "Audit the customer's billing ledger and payment gateway charge IDs. Reconcile any duplicate charges and issue an immediate receipt/credit confirmation."
+    elif is_security:
+        key_issue = "User account access blockage or security authentication failure."
+        suggested_solution = "Verify user identity via secondary authentication, unlock the affected profile, and dispatch a secure one-time password reset link."
+    elif is_churn_risk:
+        key_issue = "Severe customer dissatisfaction with imminent risk of account cancellation."
+        suggested_solution = "Respond with high executive empathy. Acknowledge past pain points, escalate to a Senior Support Lead, and offer priority resolution assistance."
+    elif is_routine:
+        key_issue = "General information request or routine product usage guidance."
+        suggested_solution = "Provide clear, step-by-step documentation links and friendly guidance to address the customer's inquiry."
+    else:
+        key_issue = "Standard customer support inquiry requiring operational evaluation."
+        suggested_solution = "Review the provided customer context, verify system logs, and post a detailed clarifying update."
+
+    return {
+        "urgency_score": round(urgency, 1),
+        "frustration_score": round(frustration, 1),
+        "compound": round(compound, 3),
+        "domains": detected_domains,
+        "key_issue": key_issue,
+        "suggested_solution": suggested_solution
+    }
+
+# =============================================================================
+# ३. फायनल Priority आणि राऊटिंग निर्णय (Master Route & Explainability)
+# =============================================================================
 
 def build_explainability_and_route(
     subject: str,
@@ -118,126 +161,146 @@ def build_explainability_and_route(
     kb_match: Optional[Dict[str, Any]] = None,
     weights = CURRENT_WEIGHTS
 ) -> ExplainabilityBreakdown:
-    # 1. प्रथम थेट Google Gemini AI (LLM) कडे विचारणा (Direct Generative AI Triage)
+    # पायरी १: जर Google Gemini API उपलब्ध असेल तर थेट LLM कडे पाठवणे
     try:
-        from .gemini_engine import call_gemini_triage
-        gemini_result = call_gemini_triage(subject, description, customer_type)
-        if gemini_result and "priority_score" in gemini_result:
-            p_score = int(gemini_result.get("priority_score", 50))
-            a_tier = gemini_result.get("assigned_tier") or ("Critical" if p_score >= weights.critical_threshold else "Standard" if p_score >= weights.standard_threshold else "Routine")
-            r_reason = gemini_result.get("routing_reason") or "Evaluated by Direct AI engine."
-            urg = float(gemini_result.get("urgency_score", 50.0))
-            frust = float(gemini_result.get("frustration_score", 50.0))
-            suggested = gemini_result.get("suggested_solution", "")
-            key_issue = gemini_result.get("key_issue", "")
+        from .gemini_engine import call_gemini_triage, get_gemini_api_key
+        if get_gemini_api_key():
+            gemini_result = call_gemini_triage(subject, description, customer_type)
+            if gemini_result and "priority_score" in gemini_result:
+                p_score = int(gemini_result.get("priority_score", 50))
+                a_tier = gemini_result.get("assigned_tier") or ("Critical" if p_score >= weights.critical_threshold else "Standard" if p_score >= weights.standard_threshold else "Routine")
+                r_reason = gemini_result.get("routing_reason") or "Direct AI autonomous classification."
+                urg = float(gemini_result.get("urgency_score", 50.0))
+                frust = float(gemini_result.get("frustration_score", 50.0))
+                suggested = gemini_result.get("suggested_solution", "")
+                key_issue = gemini_result.get("key_issue", "")
 
-            gemini_factors = [
-                ExplainabilityItem(
-                    factor="Google Gemini AI Decision",
-                    score=float(p_score),
-                    weight=100.0,
-                    contribution=float(p_score),
-                    detail=f"Direct LLM Evaluation: {key_issue}" if key_issue else f"Autonomous Triage ({gemini_result.get('ai_engine', 'Gemini AI')})"
-                ),
-                ExplainabilityItem(
-                    factor="Technical Urgency (Gemini)",
-                    score=urg,
-                    weight=40.0,
-                    contribution=round(urg * 0.4, 1),
-                    detail=f"Assessed urgency: {urg}/100"
-                ),
-                ExplainabilityItem(
-                    factor="Customer Distress (Gemini)",
-                    score=frust,
-                    weight=40.0,
-                    contribution=round(frust * 0.4, 1),
-                    detail=f"Detected sentiment index: {frust}/100"
+                factors = [
+                    ExplainabilityItem(
+                        factor="Google Gemini LLM Evaluation",
+                        score=float(p_score),
+                        weight=100.0,
+                        contribution=float(p_score),
+                        detail=f"Direct LLM Analysis: {key_issue}"
+                    ),
+                    ExplainabilityItem(
+                        factor="Technical Urgency (Gemini)",
+                        score=urg,
+                        weight=40.0,
+                        contribution=round(urg * 0.4, 1),
+                        detail=f"Assessed urgency: {urg}/100"
+                    ),
+                    ExplainabilityItem(
+                        factor="Customer Sentiment (Gemini)",
+                        score=frust,
+                        weight=40.0,
+                        contribution=round(frust * 0.4, 1),
+                        detail=f"Detected sentiment distress: {frust}/100"
+                    )
+                ]
+                summary_text = f"⚡ Direct Gemini AI Decision: {r_reason}"
+                if suggested:
+                    summary_text += f" | AI Suggested Solution: {suggested}"
+
+                return ExplainabilityBreakdown(
+                    total_priority_score=p_score,
+                    assigned_tier=a_tier,
+                    factors=factors,
+                    summary=summary_text
                 )
-            ]
-            summary_text = f"⚡ Direct Gemini AI Analysis: {r_reason}"
-            if suggested:
-                summary_text += f" | AI Suggested Reply: {suggested}"
-
-            return ExplainabilityBreakdown(
-                total_priority_score=p_score,
-                assigned_tier=a_tier,
-                factors=gemini_factors,
-                summary=summary_text
-            )
-    except Exception as e:
-        # Gemini उपलब्ध नसल्यास स्थानिक इंजिनवर सुरक्षितपणे स्विच होते
+    except Exception:
         pass
 
+    # पायरी २: प्रगत सिमेंटिक कॉग्निटिव्ह AI इंजिन (Built-in Cognitive Semantic AI Brain)
     full_text = f"{subject}\n{description}"
-    
-    frustration, compound, frust_kws = analyze_sentiment_and_frustration(full_text)
-    urgency, urgency_kws = analyze_urgency(full_text)
-    
-    tier_clean = customer_type.lower()
-    value_score = float(PLAN_VALUE_MAP.get(tier_clean, 20))
-    
-    priority_score = calculate_priority_score(frustration, urgency, value_score, weights)
-    
-    # Routing Tier Determination: Critical | Standard | Routine
-    if kb_match and priority_score < weights.critical_threshold:
-        assigned_tier = "Routine"
-        routing_reason = f"Routine FAQ match ('{kb_match.get('title')}') with priority score ({priority_score}). Auto-resolved by Knowledge Base."
-    elif priority_score >= weights.critical_threshold:
-        assigned_tier = "Critical"
-        routing_reason = f"High priority score ({priority_score}/100) exceeded critical threshold ({weights.critical_threshold}). Immediate Senior Agent Escalation."
-    else:
-        assigned_tier = "Standard"
-        routing_reason = f"Score ({priority_score}/100) routed to Standard Agent queue."
+    cog = perform_cognitive_analysis(full_text)
 
+    tier_clean = (customer_type or "Regular").lower()
+    value_score = float(PLAN_VALUE_MAP.get(tier_clean, 20))
+
+    # Weight distribution
     total_w = weights.frustration_weight + weights.urgency_weight + weights.customer_value_weight
+    if total_w <= 0: total_w = 1.0
+
     w_f = weights.frustration_weight / total_w
     w_u = weights.urgency_weight / total_w
     w_v = weights.customer_value_weight / total_w
-    
-    f_contrib = round(frustration * w_f, 1)
-    u_contrib = round(urgency * w_u, 1)
+
+    calculated_score = (cog["urgency_score"] * w_u) + (cog["frustration_score"] * w_f) + (value_score * w_v)
+    priority_score = int(round(min(100.0, max(0.0, calculated_score))))
+
+    # Routing Tier Assignment
+    if kb_match and priority_score < weights.critical_threshold:
+        assigned_tier = "Routine"
+        routing_reason = f"Routine FAQ match ('{kb_match.get('title')}') with priority score {priority_score}/100. Auto-resolved by Knowledge Base."
+    elif priority_score >= weights.critical_threshold:
+        assigned_tier = "Critical"
+        routing_reason = f"Cognitive AI detected Critical Tier ({priority_score}/100). Immediate Senior Escalation Required: {cog['key_issue']}"
+    elif priority_score >= weights.standard_threshold:
+        assigned_tier = "Standard"
+        routing_reason = f"Cognitive AI assigned Standard Tier ({priority_score}/100): {cog['key_issue']}"
+    else:
+        assigned_tier = "Routine"
+        routing_reason = f"Routine Priority ({priority_score}/100): Standard support resolution."
+
+    f_contrib = round(cog["frustration_score"] * w_f, 1)
+    u_contrib = round(cog["urgency_score"] * w_u, 1)
     v_contrib = round(value_score * w_v, 1)
-    
-    all_kws = list(set(frust_kws + urgency_kws))
-    
+
     factors = [
         ExplainabilityItem(
-            factor="Frustration & Sentiment",
-            score=frustration,
-            weight=round(w_f * 100, 1),
-            contribution=f_contrib,
-            detail=f"Compound polarity: {compound}. Frustration index: {frustration}/100"
-        ),
-        ExplainabilityItem(
-            factor="Issue Urgency & Intent",
-            score=urgency,
+            factor="Cognitive Semantic Understanding",
+            score=cog["urgency_score"],
             weight=round(w_u * 100, 1),
             contribution=u_contrib,
-            detail=f"Urgency assessment: {urgency}/100. Detected keywords: {', '.join(urgency_kws) if urgency_kws else 'None'}"
+            detail=f"Key Diagnosis: {cog['key_issue']} (Urgency: {cog['urgency_score']}/100)"
+        ),
+        ExplainabilityItem(
+            factor="Sentiment & Emotional Distress",
+            score=cog["frustration_score"],
+            weight=round(w_f * 100, 1),
+            contribution=f_contrib,
+            detail=f"Frustration index: {cog['frustration_score']}/100 [Polarity: {cog['compound']}]"
         ),
         ExplainabilityItem(
             factor="Customer Account Tier",
             score=value_score,
             weight=round(w_v * 100, 1),
             contribution=v_contrib,
-            detail=f"{customer_type.capitalize()} customer tier ({int(value_score)} baseline points)"
+            detail=f"{customer_type.capitalize()} Customer Tier ({int(value_score)} baseline points)"
         )
     ]
-    
-    summary = (
-        f"Assigned to {assigned_tier} tier with score {priority_score}/100. "
-        f"[Frustration: {f_contrib}pts, Urgency: {u_contrib}pts, Value: {v_contrib}pts]. "
-        f"{routing_reason}"
+
+    summary_text = (
+        f"🧠 Cognitive AI Diagnosis: {routing_reason} "
+        f"[Score: {priority_score}/100 | Urgency: {cog['urgency_score']} | Frustration: {cog['frustration_score']}]. "
+        f"💡 AI Suggested Solution: {cog['suggested_solution']}"
     )
-    
+
     return ExplainabilityBreakdown(
-        frustration_score=frustration,
-        urgency_score=urgency,
-        customer_value_score=value_score,
+        frustration_score=float(cog["frustration_score"]),
+        urgency_score=float(cog["urgency_score"]),
+        customer_value_score=float(value_score),
         total_priority_score=priority_score,
         assigned_tier=assigned_tier,
         factors=factors,
-        detected_keywords=all_kws,
-        sentiment_compound=compound,
-        summary=summary
+        detected_keywords=cog.get("domains", []),
+        sentiment_compound=float(cog["compound"]),
+        summary=summary_text
     )
+
+def analyze_sentiment_and_frustration(text: str) -> Tuple[float, float, List[str]]:
+    cog = perform_cognitive_analysis(text)
+    return cog["frustration_score"], cog["compound"], cog["domains"]
+
+def analyze_urgency(text: str) -> Tuple[float, List[str]]:
+    cog = perform_cognitive_analysis(text)
+    return cog["urgency_score"], cog["domains"]
+
+def calculate_priority_score(frustration_score: float, urgency_score: float, customer_value_score: float, weights = CURRENT_WEIGHTS) -> int:
+    total_w = weights.frustration_weight + weights.urgency_weight + weights.customer_value_weight
+    if total_w <= 0: total_w = 1.0
+    score = (frustration_score * (weights.frustration_weight / total_w)) + \
+            (urgency_score * (weights.urgency_weight / total_w)) + \
+            (customer_value_score * (weights.customer_value_weight / total_w))
+    return int(round(min(100.0, max(0.0, score))))
