@@ -85,7 +85,10 @@ export default function Navbar({ wsConnected }) {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16">
           {/* Brand Logo */}
-          <Link to="/" className="flex items-center space-x-3 group">
+          <Link 
+            to={user ? (user.role === 'admin' ? '/admin' : user.role === 'agent' ? '/agent' : '/customer/tickets') : '/'} 
+            className="flex items-center space-x-3 group"
+          >
             <div className="w-10 h-10 rounded-xl bg-blue-600 flex items-center justify-center shadow-md shadow-blue-500/20 group-hover:scale-105 transition-transform">
               <ShieldAlert className="w-5 h-5 text-white" />
             </div>

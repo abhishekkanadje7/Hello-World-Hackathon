@@ -6,6 +6,7 @@
 
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
 import { 
   ShieldAlert, 
   CheckCircle2, 
@@ -23,6 +24,7 @@ import {
 } from 'lucide-react';
 
 export default function LandingPage() {
+  const { user } = useAuth();
   // इंटरअॅक्टिव्ह सिम्युलेटर इनपुट स्टेट्स
   const [demoText, setDemoText] = useState("URGENT! Production payment gateway is down and checkout is throwing 500 errors! Losing thousands of dollars every minute!");
   const [demoPlan, setDemoPlan] = useState("VIP");
@@ -56,19 +58,31 @@ export default function LandingPage() {
         </p>
 
         <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
-          <Link
-            to="/register"
-            className="w-full sm:w-auto px-6 py-3 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-semibold text-sm shadow-sm hover:shadow transition-all flex items-center justify-center space-x-2"
-          >
-            <span>Register as Customer</span>
-            <ArrowRight className="w-4 h-4" />
-          </Link>
-          <Link
-            to="/login"
-            className="w-full sm:w-auto px-6 py-3 rounded-lg bg-white hover:bg-slate-50 text-slate-700 font-semibold text-sm border border-slate-300 shadow-2xs transition-all flex items-center justify-center space-x-2"
-          >
-            <span>Sign In</span>
-          </Link>
+          {!user ? (
+            <>
+              <Link
+                to="/register"
+                className="w-full sm:w-auto px-6 py-3 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-semibold text-sm shadow-sm hover:shadow transition-all flex items-center justify-center space-x-2"
+              >
+                <span>Register as Customer</span>
+                <ArrowRight className="w-4 h-4" />
+              </Link>
+              <Link
+                to="/login"
+                className="w-full sm:w-auto px-6 py-3 rounded-lg bg-white hover:bg-slate-50 text-slate-700 font-semibold text-sm border border-slate-300 shadow-2xs transition-all flex items-center justify-center space-x-2"
+              >
+                <span>Sign In</span>
+              </Link>
+            </>
+          ) : (
+            <Link
+              to={user.role === 'admin' ? '/admin' : user.role === 'agent' ? '/agent' : '/customer/tickets'}
+              className="w-full sm:w-auto px-6 py-3 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-semibold text-sm shadow-sm hover:shadow transition-all flex items-center justify-center space-x-2"
+            >
+              <span>Go to {user.role === 'admin' ? 'Admin Console' : user.role === 'agent' ? 'Agent Queue' : 'My Tickets'}</span>
+              <ArrowRight className="w-4 h-4" />
+            </Link>
+          )}
         </div>
       </section>
 
