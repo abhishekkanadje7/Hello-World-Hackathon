@@ -120,7 +120,14 @@ async def run_master_test_suite():
     print("  ✅ Ticket communication thread verified")
 
     # Claim & Release
-    senior = get_user_by_email("senior@triagex.com")
+    agent_reg = await create_agent({
+        "name": "Senior Lead",
+        "email": "senior_lead@triagex.com",
+        "password": "AgentPassword123!",
+        "role": "agent",
+        "agent_level": "Senior"
+    }, current_user=admin)
+    senior = agent_reg["user"]
     claimed = await claim_ticket(crit_ticket["id"], current_user=senior)
     assert claimed["assigned_agent_id"] == senior["id"]
     released = await release_ticket(crit_ticket["id"], current_user=senior)
