@@ -9,6 +9,7 @@ Consolidated end-to-end and unit verification covering:
 import asyncio
 import os
 import sys
+import uuid
 from datetime import datetime
 from fastapi import HTTPException
 
@@ -120,9 +121,10 @@ async def run_master_test_suite():
     print("  ✅ Ticket communication thread verified")
 
     # Claim & Release
+    unique_agent_email = f"senior_{uuid.uuid4().hex[:6]}@triagex.com"
     agent_reg = await create_agent({
         "name": "Senior Lead",
-        "email": "senior_lead@triagex.com",
+        "email": unique_agent_email,
         "password": "AgentPassword123!",
         "role": "agent",
         "agent_level": "Senior"
