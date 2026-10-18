@@ -19,6 +19,7 @@ import {
   resetDemoDatabase,
   fetchAuditLogs
 } from '../../api';
+import TicketDetailModal from '../../components/TicketDetailModal';
 
 export default function AdminPortalPage() {
   const { user } = useAuth();
@@ -38,6 +39,7 @@ export default function AdminPortalPage() {
   const [ticketSearch, setTicketSearch] = useState('');
   const [ticketTierFilter, setTicketTierFilter] = useState('');
   const [ticketStatusFilter, setTicketStatusFilter] = useState('');
+  const [selectedTicket, setSelectedTicket] = useState(null);
 
   // 3. Users data
   const [usersList, setUsersList] = useState([]);
@@ -696,12 +698,12 @@ export default function AdminPortalPage() {
                               {t.assigned_agent_name || <span className="italic text-slate-500">Unassigned</span>}
                             </td>
                             <td className="py-3 px-3 text-right">
-                              <a
-                                href={`/agent/tickets/${t.id}`}
-                                className="px-2.5 py-1 rounded-lg text-xs bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition-colors"
+                              <button
+                                onClick={() => setSelectedTicket(t)}
+                                className="px-2.5 py-1 rounded-lg text-xs bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition-colors font-medium cursor-pointer"
                               >
                                 View
-                              </a>
+                              </button>
                             </td>
                           </tr>
                         ))}
@@ -1377,6 +1379,19 @@ export default function AdminPortalPage() {
           </div>
         )}
       </main>
+
+      {/* Ticket Detail & Triage Modal */}
+      <TicketDetailModal
+        ticket={selectedTicket}
+        isOpen={!!selectedTicket}
+        onClose={() => setSelectedTicket(null)}
+        onTicketUpdated={(updated) => {
+          setTickets(prev => prev.map(t => t.id === updated.id ? updated : t));
+          setSelectedTicket(updated);
+          loadTickets();
+        }}
+        currentUser={user}
+      />
     </div>
   );
 }

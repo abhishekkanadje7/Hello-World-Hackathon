@@ -28,13 +28,15 @@ export default function TicketDetailModal({ ticket, isOpen, onClose, onTicketUpd
   const factors = expl.factors || [];
   const detectedKws = expl.detected_keywords || [];
 
+  const custTier = ticket.customer_type || ticket.plan_tier || 'Regular';
+
   // Recommended AI response templates
   const getAiRecommendedResponse = () => {
     if (ticket.status === 'Auto-Resolved' && ticket.kb_auto_reply) {
       return `Dear ${ticket.customer_name},\n\nOur automated knowledge base identified an immediate solution for your inquiry:\n\n${ticket.kb_auto_reply.snippet}\n\nFor the complete step-by-step guide, please reference: "${ticket.kb_auto_reply.title}".`;
     }
     if (ticket.priority_score >= 70) {
-      return `Dear ${ticket.customer_name},\n\nI understand the critical urgency of this issue regarding "${ticket.subject}". Because you are an esteemed ${ticket.plan_tier.toUpperCase()} customer experiencing an active operational disruption, this ticket has been prioritized to our Senior Engineering Operations team.\n\nWe are actively investigating and will provide a status update within 15 minutes.\n\nBest regards,\n${currentUser?.name || 'Senior Support Operations'}`;
+      return `Dear ${ticket.customer_name},\n\nI understand the critical urgency of this issue regarding "${ticket.subject}". Because you are an esteemed ${custTier.toUpperCase()} customer experiencing an active operational disruption, this ticket has been prioritized to our Senior Engineering Operations team.\n\nWe are actively investigating and will provide a status update within 15 minutes.\n\nBest regards,\n${currentUser?.name || 'Senior Support Operations'}`;
     }
     return `Hello ${ticket.customer_name},\n\nThank you for reaching out to TriageX support. We have received your query regarding "${ticket.subject}" and our team is reviewing it.\n\nWe will get back to you shortly.\n\nBest regards,\n${currentUser?.name || 'Customer Support Team'}`;
   };
@@ -42,15 +44,20 @@ export default function TicketDetailModal({ ticket, isOpen, onClose, onTicketUpd
   const handleUpdate = async (newStatus) => {
     setSaving(true);
     try {
-      const updated = await updateTicketStatus(ticket.id, {
-        status: newStatus || status,
-        assigned_agent: assignedAgent || currentUser?.name,
-        resolution_note: note || (newStatus === 'Resolved' ? 'Resolved by agent' : undefined)
-      });
+      const targetStatus = newStatus || status;
+      const resNote = note || (targetStatus === 'Resolved' ? 'Resolved by agent' : undefined);
+      const updated = await updateTicketStatus(
+        ticket.id,
+        targetStatus,
+        currentUser?.id || null,
+        currentUser?.name || assignedAgent || 'Support Agent',
+        resNote
+      );
       if (onTicketUpdated) onTicketUpdated(updated);
       onClose();
     } catch (e) {
-      console.error(e);
+      console.error('Failed to update ticket status:', e);
+      alert(e.message || 'Failed to update ticket');
     } finally {
       setSaving(false);
     }
@@ -91,7 +98,7 @@ export default function TicketDetailModal({ ticket, isOpen, onClose, onTicketUpd
                 <div className="text-xs text-slate-400 mt-0.5 flex items-center space-x-2">
                   <span>From: <strong className="text-slate-200">{ticket.customer_name}</strong> ({ticket.customer_email})</span>
                   <span>•</span>
-                  <span className="text-indigo-400 font-mono uppercase font-bold">{ticket.plan_tier} Tier</span>
+                  <span className="text-indigo-400 font-mono uppercase font-bold">{custTier} Tier</span>
                   <span>•</span>
                   <span>Channel: <span className="capitalize">{ticket.channel}</span></span>
                 </div>

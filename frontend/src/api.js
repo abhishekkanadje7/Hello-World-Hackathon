@@ -159,15 +159,26 @@ export async function sendTicketReply(ticketId, message, is_internal = false) {
   });
 }
 
-export async function updateTicketStatus(id, status, assigned_agent_id = null, assigned_agent_name = null, note = null) {
-  return request(`/tickets/${id}/status`, {
-    method: 'PATCH',
-    body: JSON.stringify({
-      status,
+export async function updateTicketStatus(id, statusOrPayload, assigned_agent_id = null, assigned_agent_name = null, note = null) {
+  let bodyPayload = {};
+  if (typeof statusOrPayload === 'object' && statusOrPayload !== null) {
+    bodyPayload = {
+      status: statusOrPayload.status,
+      assigned_agent_id: statusOrPayload.assigned_agent_id || null,
+      assigned_agent_name: statusOrPayload.assigned_agent_name || statusOrPayload.assigned_agent || null,
+      resolution_note: statusOrPayload.resolution_note || statusOrPayload.note || null
+    };
+  } else {
+    bodyPayload = {
+      status: statusOrPayload,
       assigned_agent_id,
       assigned_agent_name,
       resolution_note: note
-    })
+    };
+  }
+  return request(`/tickets/${id}/status`, {
+    method: 'PATCH',
+    body: JSON.stringify(bodyPayload)
   });
 }
 
