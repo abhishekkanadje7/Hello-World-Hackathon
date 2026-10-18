@@ -7,14 +7,99 @@ from typing import List, Dict, Any, Optional
 from .config import ADMIN_EMAIL, ADMIN_PASSWORD
 from .auth import hash_password
 
+import re
+
+DATABASE_URL = os.environ.get("DATABASE_URL")
+# Render sometimes provides postgres:// which psycopg2 prefers as postgresql://
+if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+
 DB_PATH = os.environ.get("DATABASE_PATH") or os.path.join(os.path.dirname(__file__), "..", "triagex.db")
-if os.path.dirname(DB_PATH):
+if not DATABASE_URL and os.path.dirname(DB_PATH):
     try:
         os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
     except Exception:
         pass
 
+class RowLike(dict):
+    """Dict that also allows integer indexing (e.g. row[0]) for full sqlite3.Row compatibility."""
+    def __getitem__(self, item):
+        if isinstance(item, int):
+            return list(self.values())[item]
+        return super().__getitem__(item)
+
+class PostgresCursorWrapper:
+    def __init__(self, pg_cursor):
+        self._cur = pg_cursor
+
+    def execute(self, query: str, params=None):
+        q = query
+        # Remove sqlite AUTOINCREMENT
+        q = q.replace("AUTOINCREMENT", "")
+        # Adapt INSERT OR REPLACE for settings
+        q = re.sub(
+            r"INSERT\s+OR\s+REPLACE\s+INTO\s+settings\s*\(([^)]+)\)\s*VALUES\s*\(([^)]+)\)",
+            r"INSERT INTO settings (\1) VALUES (\2) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value",
+            q,
+            flags=re.IGNORECASE
+        )
+        # Adapt INSERT OR IGNORE for canned_replies
+        if re.search(r"INSERT\s+OR\s+IGNORE\s+INTO\s+canned_replies", q, flags=re.IGNORECASE):
+            q = re.sub(r"INSERT\s+OR\s+IGNORE\s+INTO\s+canned_replies", "INSERT INTO canned_replies", q, flags=re.IGNORECASE)
+            if "ON CONFLICT" not in q:
+                q += " ON CONFLICT (id) DO NOTHING"
+        # Convert ? placeholders to %s
+        q = q.replace("?", "%s")
+        if params is not None:
+            return self._cur.execute(q, params)
+        return self._cur.execute(q)
+
+    def fetchone(self):
+        row = self._cur.fetchone()
+        return RowLike(row) if row else None
+
+    def fetchall(self):
+        rows = self._cur.fetchall()
+        return [RowLike(r) for r in rows]
+
+    @property
+    def rowcount(self):
+        return self._cur.rowcount
+
+    def close(self):
+        return self._cur.close()
+
+class PostgresConnectionWrapper:
+    def __init__(self, pg_conn):
+        self._pg_conn = pg_conn
+
+    def cursor(self):
+        from psycopg2.extras import RealDictCursor
+        return PostgresCursorWrapper(self._pg_conn.cursor(cursor_factory=RealDictCursor))
+
+    def commit(self):
+        return self._pg_conn.commit()
+
+    def rollback(self):
+        return self._pg_conn.rollback()
+
+    def close(self):
+        return self._pg_conn.close()
+
+    def execute(self, query: str, params=None):
+        cur = self.cursor()
+        cur.execute(query, params)
+        return cur
+
 def get_connection():
+    if DATABASE_URL:
+        try:
+            import psycopg2
+            pg_conn = psycopg2.connect(DATABASE_URL)
+            return PostgresConnectionWrapper(pg_conn)
+        except Exception as e:
+            print(f"[Database] Warning: Failed to connect to DATABASE_URL: {e}. Falling back to SQLite.")
+    
     conn = sqlite3.connect(DB_PATH, timeout=20.0)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA busy_timeout = 20000")

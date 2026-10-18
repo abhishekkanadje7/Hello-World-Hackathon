@@ -90,10 +90,12 @@ def startup_event():
 # --- HEALTH ---
 @app.get("/api/health")
 def health_check():
+    from .database import DATABASE_URL
     return {
         "status": "healthy",
         "service": "TriageX Engine",
         "version": "2.1.0",
+        "database_engine": "PostgreSQL (Cloud Persistent)" if DATABASE_URL else "SQLite (Local/Disk)",
         "timestamp": datetime.utcnow().isoformat() + "Z",
         "active_weights": CURRENT_WEIGHTS.dict()
     }
