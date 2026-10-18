@@ -12,20 +12,25 @@ import {
   Sparkles,
   Radio
 } from 'lucide-react';
-import { logTicketCall } from '../api';
+import { logTicketCall, endTicketCall, getTicketCallStatus } from '../api';
 
 export default function VoiceCallModal({
   isOpen,
   onClose,
-  recipientName = 'Support Specialist',
+  recipientName,
+  partyName,
   recipientRole = 'Support Specialist',
+  partyPhone,
   ticketId,
   ticketNumber = '',
-  onCallCompleted
+  isIncoming = false,
+  onCallCompleted,
+  onCallLogged
 }) {
   if (!isOpen) return null;
 
-  const [callState, setCallState] = useState('calling'); // 'calling' | 'connected' | 'ended'
+  const displayName = recipientName || partyName || 'Support Specialist';
+  const [callState, setCallState] = useState(isIncoming ? 'connected' : 'calling'); // 'calling' | 'connected' | 'ended'
   const [seconds, setSeconds] = useState(0);
   const [isMuted, setIsMuted] = useState(false);
   const [isSpeakerOn, setIsSpeakerOn] = useState(true);
@@ -34,26 +39,83 @@ export default function VoiceCallModal({
   // Timer ref
   const timerRef = useRef(null);
 
-  // Auto transition from calling to connected after 2.5 seconds
-  useEffect(() => {
-    const connectTimer = setTimeout(() => {
-      setCallState('connected');
-    }, 2400);
+  // Play electronic ring chime
+  const playRingChime = () => {
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = new AudioCtx();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(440, ctx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(880, ctx.currentTime + 0.3);
+      gain.gain.setValueAtTime(0.08, ctx.currentTime);
+      gain.gain.linearRampToValueAtTime(0.01, ctx.currentTime + 0.3);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.3);
+    } catch (_) {}
+  };
 
-    return () => clearTimeout(connectTimer);
-  }, []);
-
-  // Duration counter when connected
+  // Calling chime & signaling check
   useEffect(() => {
+    if (callState === 'calling') {
+      playRingChime();
+      const chimeInt = setInterval(playRingChime, 1800);
+
+      // Check remote answer via polling
+      const pollInt = setInterval(async () => {
+        try {
+          if (ticketId) {
+            const stat = await getTicketCallStatus(ticketId);
+            if (stat && stat.status === 'connected') {
+              setCallState('connected');
+            } else if (stat && stat.status === 'ended') {
+              handleEndCall();
+            }
+          }
+        } catch (_) {}
+      }, 1200);
+
+      // Seamless single-tab demo auto-connect after 3.2s
+      const autoConnect = setTimeout(() => {
+        setCallState('connected');
+      }, 3200);
+
+      return () => {
+        clearInterval(chimeInt);
+        clearInterval(pollInt);
+        clearTimeout(autoConnect);
+      };
+    }
+  }, [callState, ticketId]);
+
+  // Duration counter when connected + poll for remote hangup
+  useEffect(() => {
+    let pollRemote = null;
     if (callState === 'connected') {
       timerRef.current = setInterval(() => {
         setSeconds(prev => prev + 1);
       }, 1000);
+
+      pollRemote = setInterval(async () => {
+        try {
+          if (ticketId) {
+            const stat = await getTicketCallStatus(ticketId);
+            if (stat && (stat.status === 'ended' || stat.status === 'none')) {
+              handleEndCall();
+            }
+          }
+        } catch (_) {}
+      }, 2000);
     }
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
+      if (pollRemote) clearInterval(pollRemote);
     };
-  }, [callState]);
+  }, [callState, ticketId]);
 
   const formatDuration = (sec) => {
     const m = Math.floor(sec / 60);
@@ -67,19 +129,20 @@ export default function VoiceCallModal({
     setCallState('ended');
     if (timerRef.current) clearInterval(timerRef.current);
 
+    const dur = Math.max(1, seconds);
     try {
       if (ticketId) {
-        await logTicketCall(ticketId, Math.max(1, seconds), 'Completed');
+        await endTicketCall(ticketId, dur).catch(() => {});
+        await logTicketCall(ticketId, dur, 'Completed').catch(() => {});
       }
-      if (onCallCompleted) {
-        onCallCompleted(seconds);
-      }
+      if (onCallCompleted) onCallCompleted(dur);
+      if (onCallLogged) onCallLogged(dur);
     } catch (e) {
       console.warn('Call log failed:', e);
     } finally {
       setTimeout(() => {
         onClose();
-      }, 1000);
+      }, 800);
     }
   };
 
@@ -94,7 +157,7 @@ export default function VoiceCallModal({
         <div className="space-y-1">
           <div className="inline-flex items-center space-x-1.5 px-3 py-1 rounded-full bg-slate-800/80 border border-slate-700/60 text-[11px] text-slate-300 font-mono">
             <Radio className="w-3 h-3 text-emerald-400 animate-pulse" />
-            <span>Encrypted In-App Audio Call</span>
+            <span>Encrypted In-App Audio Voice Call</span>
           </div>
           {ticketNumber && (
             <p className="text-[11px] text-slate-400 font-mono pt-1">
@@ -122,10 +185,10 @@ export default function VoiceCallModal({
           </div>
 
           <h3 className="text-lg font-bold text-white mt-4 tracking-tight">
-            {recipientName}
+            {displayName}
           </h3>
           <p className="text-xs text-slate-400 capitalize">
-            {recipientRole}
+            {recipientRole} {partyPhone ? `(${partyPhone})` : ''}
           </p>
 
           {/* Call Status / Timer */}

@@ -48,6 +48,7 @@ export default function AdminPortalPage() {
   const [showCreateAgentModal, setShowCreateAgentModal] = useState(false);
   const [newAgentName, setNewAgentName] = useState('');
   const [newAgentEmail, setNewAgentEmail] = useState('');
+  const [newAgentPhone, setNewAgentPhone] = useState('');
   const [newAgentLevel, setNewAgentLevel] = useState('Standard');
   const [createdAgentResult, setCreatedAgentResult] = useState(null);
   const [userSearch, setUserSearch] = useState('');
@@ -202,11 +203,13 @@ export default function AdminPortalPage() {
       const res = await createAdminAgent({
         name: newAgentName,
         email: newAgentEmail,
-        agent_level: newAgentLevel
+        agent_level: newAgentLevel,
+        phone: newAgentPhone
       });
       setCreatedAgentResult(res);
       setNewAgentName('');
       setNewAgentEmail('');
+      setNewAgentPhone('');
       loadUsers();
       showNotification('Agent account created successfully!');
     } catch (err) {
@@ -778,6 +781,7 @@ export default function AdminPortalPage() {
                           <td className="py-3.5 px-4">
                             <div className="font-semibold text-white">{u.name}</div>
                             <div className="text-slate-400 font-mono text-[11px]">{u.email}</div>
+                            {u.phone && <div className="text-emerald-400 font-mono text-[11px]">📞 {u.phone}</div>}
                           </td>
                           <td className="py-3.5 px-4">
                             {u.role === 'agent' ? (
@@ -897,6 +901,17 @@ export default function AdminPortalPage() {
                           value={newAgentEmail}
                           onChange={(e) => setNewAgentEmail(e.target.value)}
                           placeholder="meera@triagex.com"
+                          className="w-full rounded-xl bg-slate-950 border border-slate-800 px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs font-medium text-slate-300 block mb-1">Agent Contact / Phone Number</label>
+                        <input
+                          type="tel"
+                          required
+                          value={newAgentPhone}
+                          onChange={(e) => setNewAgentPhone(e.target.value)}
+                          placeholder="+91 98765 43210"
                           className="w-full rounded-xl bg-slate-950 border border-slate-800 px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500"
                         />
                       </div>

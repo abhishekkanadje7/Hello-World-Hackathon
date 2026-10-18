@@ -274,6 +274,24 @@ def init_db():
         cursor.execute("ALTER TABLE ticket_replies ADD COLUMN attachments_json TEXT")
     except Exception:
         pass
+
+    try:
+        cursor.execute("ALTER TABLE users ADD COLUMN phone TEXT")
+    except Exception:
+        pass
+
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS active_calls (
+        id TEXT PRIMARY KEY,
+        ticket_id TEXT NOT NULL,
+        caller_name TEXT NOT NULL,
+        caller_role TEXT NOT NULL,
+        caller_phone TEXT,
+        status TEXT NOT NULL,
+        started_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    )
+    """)
     
     conn.commit()
     seed_users_and_tickets(conn)
@@ -933,21 +951,21 @@ def set_setting(key: str, value: str, performed_by: str = "Admin"):
 def get_all_users() -> List[Dict[str, Any]]:
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT id, name, email, role, agent_level, customer_type, is_active, must_change_password, created_at FROM users ORDER BY created_at DESC")
+    cursor.execute("SELECT id, name, email, role, agent_level, customer_type, is_active, must_change_password, created_at, phone FROM users ORDER BY created_at DESC")
     rows = cursor.fetchall()
     conn.close()
     return [dict(r) for r in rows]
 
-def create_agent_user(name: str, email: str, password_hash: str, agent_level: str, performed_by: str) -> Dict[str, Any]:
+def create_agent_user(name: str, email: str, password_hash: str, agent_level: str, performed_by: str, phone: Optional[str] = None) -> Dict[str, Any]:
     conn = get_connection()
     cursor = conn.cursor()
     agent_id = f"usr-agent-{uuid.uuid4().hex[:6]}"
     now_iso = datetime.utcnow().isoformat() + "Z"
     
     cursor.execute("""
-    INSERT INTO users (id, name, email, password_hash, role, agent_level, customer_type, is_active, must_change_password, failed_login_attempts, created_at)
-    VALUES (?, ?, ?, ?, 'agent', ?, NULL, 1, 1, 0, ?)
-    """, (agent_id, name.strip(), email.strip().lower(), password_hash, agent_level, now_iso))
+    INSERT INTO users (id, name, email, password_hash, role, agent_level, customer_type, is_active, must_change_password, failed_login_attempts, created_at, phone)
+    VALUES (?, ?, ?, ?, 'agent', ?, NULL, 1, 1, 0, ?, ?)
+    """, (agent_id, name.strip(), email.strip().lower(), password_hash, agent_level, now_iso, phone.strip() if phone else None))
     
     cursor.execute("""
     INSERT INTO audit_logs (ticket_id, action, details, performed_by, timestamp)
@@ -1194,6 +1212,75 @@ def submit_ticket_csat(ticket_id: str, rating: int, feedback: Optional[str], cus
         )
         
     return get_ticket_by_id(ticket_id)
+
+def initiate_call(ticket_id: str, caller_name: str, caller_role: str, caller_phone: Optional[str] = None) -> Dict[str, Any]:
+    conn = get_connection()
+    cursor = conn.cursor()
+    call_id = f"call-{uuid.uuid4().hex[:8]}"
+    now_iso = datetime.utcnow().isoformat() + "Z"
+    cursor.execute("DELETE FROM active_calls WHERE ticket_id = ?", (ticket_id,))
+    cursor.execute("""
+    INSERT INTO active_calls (id, ticket_id, caller_name, caller_role, caller_phone, status, started_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, 'ringing', ?, ?)
+    """, (call_id, ticket_id, caller_name, caller_role, caller_phone or "", now_iso, now_iso))
+    conn.commit()
+    conn.close()
+    return {
+        "id": call_id,
+        "ticket_id": ticket_id,
+        "caller_name": caller_name,
+        "caller_role": caller_role,
+        "caller_phone": caller_phone or "",
+        "status": "ringing",
+        "started_at": now_iso
+    }
+
+def get_active_call(ticket_id: str) -> Optional[Dict[str, Any]]:
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM active_calls WHERE ticket_id = ? AND status IN ('ringing', 'connected')", (ticket_id,))
+    row = cursor.fetchone()
+    conn.close()
+    if row:
+        return dict(row)
+    return None
+
+def answer_call(ticket_id: str) -> Optional[Dict[str, Any]]:
+    conn = get_connection()
+    cursor = conn.cursor()
+    now_iso = datetime.utcnow().isoformat() + "Z"
+    cursor.execute("""
+    UPDATE active_calls SET status = 'connected', updated_at = ? WHERE ticket_id = ? AND status = 'ringing'
+    """, (now_iso, ticket_id))
+    cursor.execute("SELECT * FROM active_calls WHERE ticket_id = ?", (ticket_id,))
+    row = cursor.fetchone()
+    conn.commit()
+    conn.close()
+    if row:
+        return dict(row)
+    return None
+
+def end_call(ticket_id: str, duration_seconds: int = 0) -> Optional[Dict[str, Any]]:
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM active_calls WHERE ticket_id = ?", (ticket_id,))
+    row = cursor.fetchone()
+    if row:
+        c_dict = dict(row)
+        cursor.execute("DELETE FROM active_calls WHERE ticket_id = ?", (ticket_id,))
+        conn.commit()
+        conn.close()
+        log_ticket_call(
+            ticket_id=ticket_id,
+            caller_name=c_dict["caller_name"],
+            caller_role=c_dict["caller_role"],
+            duration_seconds=duration_seconds,
+            call_status="Completed"
+        )
+        c_dict["status"] = "ended"
+        return c_dict
+    conn.close()
+    return None
 
 
 

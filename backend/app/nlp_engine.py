@@ -211,8 +211,8 @@ def find_similar_resolved_ticket(subject: str, description: str, resolved_ticket
                 "matched_keywords": list(intersection)[:6]
             }
             
-    # Require at least 32% match or 2+ shared core tokens
-    if best_match and (best_match["similarity_score"] >= 32.0 or len(best_match["matched_keywords"]) >= 2):
+    # Require at least 35% match AND at least 2 shared core keywords
+    if best_match and best_match["similarity_score"] >= 35.0 and len(best_match["matched_keywords"]) >= 2:
         return best_match
     return None
 

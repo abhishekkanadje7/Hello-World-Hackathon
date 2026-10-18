@@ -26,7 +26,8 @@ from .database import (
     update_user_profile, admin_reset_user_password, reset_demo_database,
     get_all_canned_replies, insert_canned_reply, delete_canned_reply,
     create_notification, get_user_notifications, mark_notifications_read,
-    submit_ticket_csat, get_resolved_tickets_for_matching, log_ticket_call
+    submit_ticket_csat, get_resolved_tickets_for_matching, log_ticket_call,
+    initiate_call, get_active_call, answer_call, end_call
 )
 from .nlp_engine import (
     analyze_sentiment_and_frustration, analyze_urgency,
@@ -612,6 +613,54 @@ async def log_call_endpoint(
 
     return call_log
 
+@app.post("/api/tickets/{ticket_id}/call/initiate")
+async def initiate_call_endpoint(
+    ticket_id: str,
+    req: Dict[str, Any],
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    ticket = get_ticket_by_id(ticket_id)
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+    phone = req.get("caller_phone") or ticket.get("customer_phone") or ""
+    active = initiate_call(
+        ticket_id=ticket_id,
+        caller_name=current_user["name"],
+        caller_role=current_user.get("role", "customer"),
+        caller_phone=phone
+    )
+    await ws_manager.broadcast("CALL_RINGING", active)
+    return active
+
+@app.get("/api/tickets/{ticket_id}/call/status")
+def get_call_status_endpoint(
+    ticket_id: str,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    active = get_active_call(ticket_id)
+    return active or {"status": "none"}
+
+@app.post("/api/tickets/{ticket_id}/call/answer")
+async def answer_call_endpoint(
+    ticket_id: str,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    active = answer_call(ticket_id)
+    if active:
+        await ws_manager.broadcast("CALL_CONNECTED", active)
+    return active or {"status": "none"}
+
+@app.post("/api/tickets/{ticket_id}/call/end")
+async def end_call_endpoint(
+    ticket_id: str,
+    req: Dict[str, Any],
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    dur = req.get("duration_seconds", 0)
+    res = end_call(ticket_id, duration_seconds=dur)
+    await ws_manager.broadcast("CALL_ENDED", {"ticket_id": ticket_id})
+    return res or {"status": "ended"}
+
 # --- STATUS & RESOLUTION (Feature 4: Email & SMS Dispatch) ---
 
 @app.patch("/api/tickets/{ticket_id}/status")
@@ -1025,6 +1074,7 @@ async def create_agent(
     name = req.get("name", "").strip()
     email = req.get("email", "").strip().lower()
     agent_level = req.get("agent_level", "Standard")
+    phone = req.get("phone", "").strip()
     
     if not name or not email:
         raise HTTPException(status_code=400, detail="Name and email are required.")
@@ -1039,7 +1089,7 @@ async def create_agent(
     temp_password = "Ag!" + "".join(secrets.choice(alphabet) for _ in range(9))
     
     pw_hash = hash_password(temp_password)
-    new_agent = create_agent_user(name, email, pw_hash, agent_level, current_user["name"])
+    new_agent = create_agent_user(name, email, pw_hash, agent_level, current_user["name"], phone=phone)
     
     return {
         "user": new_agent,

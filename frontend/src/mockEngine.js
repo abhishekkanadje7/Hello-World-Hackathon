@@ -120,11 +120,16 @@ function getInitialState() {
 function loadDB() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) return JSON.parse(raw);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (!parsed.active_calls) parsed.active_calls = {};
+      return parsed;
+    }
   } catch (e) {
     console.warn('Failed to load demo DB from localStorage', e);
   }
   const init = getInitialState();
+  init.active_calls = {};
   saveDB(init);
   return init;
 }
@@ -422,13 +427,15 @@ export async function handleMockRequest(endpoint, options = {}) {
           const ptTokens = (pt.subject + ' ' + (pt.description || '')).toLowerCase().match(/\b[a-z0-9_]{3,}\b/g) || [];
           const ptClean = new Set(ptTokens.filter(t => !stopWords.has(t)));
           const common = [...cleanTokens].filter(x => ptClean.has(x));
-          if (common.length >= 2) {
+          const unionSize = cleanTokens.size + ptClean.size - common.length;
+          const jaccard = unionSize > 0 ? (common.length / unionSize) : 0;
+          if (common.length >= 2 && jaccard >= 0.35) {
             historicalMatch = {
               matched_ticket_id: pt.id,
               matched_ticket_number: pt.ticket_number,
               matched_subject: pt.subject,
               resolution_note: pt.resolution_note,
-              similarity_score: Math.min(96, Math.round(40 + (common.length * 15))),
+              similarity_score: Math.min(96, Math.round(jaccard * 100)),
               matched_keywords: common.slice(0, 5)
             };
             break;
@@ -548,7 +555,14 @@ export async function handleMockRequest(endpoint, options = {}) {
       err.status = 404;
       throw err;
     }
-    return ticket;
+    const rawUser = localStorage.getItem('triagex_user');
+    const currentUser = rawUser ? JSON.parse(rawUser) : null;
+    const isCustomer = currentUser && currentUser.role === 'customer';
+    const allReps = db.replies[ticket.id] || [];
+    return {
+      ...ticket,
+      replies: isCustomer ? allReps.filter(r => !r.is_internal) : allReps
+    };
   }
 
   // 9. TICKET CLAIM
@@ -627,6 +641,82 @@ export async function handleMockRequest(endpoint, options = {}) {
 
     saveDB(db);
     return { success: true, call_log: callRep };
+  }
+
+  // Active Call Initiate
+  const callInitMatch = pathname.match(/^\/tickets\/([^/]+)\/call\/initiate$/);
+  if (callInitMatch && method === 'POST') {
+    const tid = callInitMatch[1];
+    const ticket = db.tickets.find(t => t.id === tid);
+    if (!ticket) throw new Error('Ticket not found');
+    const rawUser = localStorage.getItem('triagex_user');
+    const currentUser = rawUser ? JSON.parse(rawUser) : null;
+    const callerName = currentUser ? currentUser.name : 'Customer';
+    const callerRole = currentUser ? currentUser.role : 'customer';
+    const callerPhone = body.caller_phone || ticket.customer_phone || '';
+    db.active_calls = db.active_calls || {};
+    db.active_calls[tid] = {
+      id: `call-${Date.now()}`,
+      ticket_id: tid,
+      caller_name: callerName,
+      caller_role: callerRole,
+      caller_phone: callerPhone,
+      status: 'ringing',
+      started_at: new Date().toISOString()
+    };
+    saveDB(db);
+    return db.active_calls[tid];
+  }
+
+  // Active Call Status
+  const callStatusMatch = pathname.match(/^\/tickets\/([^/]+)\/call\/status$/);
+  if (callStatusMatch && method === 'GET') {
+    const tid = callStatusMatch[1];
+    db.active_calls = db.active_calls || {};
+    return db.active_calls[tid] || { status: 'none' };
+  }
+
+  // Active Call Answer
+  const callAnswerMatch = pathname.match(/^\/tickets\/([^/]+)\/call\/answer$/);
+  if (callAnswerMatch && method === 'POST') {
+    const tid = callAnswerMatch[1];
+    db.active_calls = db.active_calls || {};
+    if (db.active_calls[tid]) {
+      db.active_calls[tid].status = 'connected';
+      saveDB(db);
+      return db.active_calls[tid];
+    }
+    return { status: 'none' };
+  }
+
+  // Active Call End
+  const callEndMatch = pathname.match(/^\/tickets\/([^/]+)\/call\/end$/);
+  if (callEndMatch && method === 'POST') {
+    const tid = callEndMatch[1];
+    db.active_calls = db.active_calls || {};
+    const curCall = db.active_calls[tid];
+    if (curCall) {
+      delete db.active_calls[tid];
+      const duration = body.duration_seconds || 0;
+      const mins = Math.floor(duration / 60);
+      const secs = duration % 60;
+      if (!db.replies[tid]) db.replies[tid] = [];
+      const callRep = {
+        id: `rep-call-${Date.now()}`,
+        ticket_id: tid,
+        author_id: null,
+        author_name: curCall.caller_name,
+        author_role: 'system',
+        message: `📞 Direct Audio Call (Completed) - Duration: ${mins}m ${secs < 10 ? '0' : ''}${secs}s. Handled with ${curCall.caller_name}.`,
+        is_internal: false,
+        created_at: new Date().toISOString(),
+        attachments: []
+      };
+      db.replies[tid].push(callRep);
+      saveDB(db);
+      return { status: 'ended', call_log: callRep };
+    }
+    return { status: 'ended' };
   }
 
   // 12. TICKET STATUS & RESOLUTION NOTIFICATION (Feature 4)
@@ -780,6 +870,7 @@ export async function handleMockRequest(endpoint, options = {}) {
       email: body.email.toLowerCase().trim(),
       role: 'agent',
       agent_level: body.agent_level || 'Standard',
+      phone: body.phone || '+91 98765 12345',
       customer_type: null,
       password: tempPassword,
       is_active: 1,

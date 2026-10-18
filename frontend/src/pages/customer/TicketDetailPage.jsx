@@ -1,7 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
-import { fetchTicketById, sendTicketReply } from '../../api';
+import { 
+  fetchTicketById, 
+  sendTicketReply,
+  initiateTicketCall,
+  getTicketCallStatus,
+  answerTicketCall,
+  endTicketCall
+} from '../../api';
 import VoiceCallModal from '../../components/VoiceCallModal';
 import { 
   ArrowLeft, 
@@ -43,8 +50,9 @@ export default function TicketDetailPage() {
 
   // Calling modal state
   const [showCallModal, setShowCallModal] = useState(false);
-  // Image preview modal
   const [previewImage, setPreviewImage] = useState(null);
+  const [incomingCall, setIncomingCall] = useState(null);
+  const [isAnswering, setIsAnswering] = useState(false);
 
   const loadTicketData = async () => {
     try {
@@ -62,7 +70,7 @@ export default function TicketDetailPage() {
 
   useEffect(() => {
     loadTicketData();
-    // Live polling for chat updates
+    // Live polling for chat updates and incoming agent calls
     const interval = setInterval(async () => {
       try {
         const data = await fetchTicketById(id);
@@ -72,10 +80,40 @@ export default function TicketDetailPage() {
             setTicket(data);
           }
         }
+        const callStat = await getTicketCallStatus(id);
+        if (callStat && callStat.status === 'ringing' && callStat.caller_role !== 'customer') {
+          setIncomingCall(callStat);
+        } else if (callStat && (callStat.status === 'ended' || callStat.status === 'none')) {
+          setIncomingCall(null);
+        }
       } catch (e) {}
-    }, 4000);
+    }, 2500);
     return () => clearInterval(interval);
   }, [id]);
+
+  const handleStartCall = async () => {
+    try {
+      await initiateTicketCall(ticket.id, ticket.customer_phone);
+    } catch (_) {}
+    setIsAnswering(false);
+    setShowCallModal(true);
+  };
+
+  const handleAnswerIncomingCall = async () => {
+    try {
+      await answerTicketCall(ticket.id);
+    } catch (_) {}
+    setIncomingCall(null);
+    setIsAnswering(true);
+    setShowCallModal(true);
+  };
+
+  const handleDeclineIncomingCall = async () => {
+    try {
+      await endTicketCall(ticket.id, 0);
+    } catch (_) {}
+    setIncomingCall(null);
+  };
 
   const handleFileUpload = (e) => {
     const files = Array.from(e.target.files || []);
@@ -169,7 +207,7 @@ export default function TicketDetailPage() {
           {/* Direct Audio Calling Button (Feature 2) */}
           <button
             type="button"
-            onClick={() => setShowCallModal(true)}
+            onClick={handleStartCall}
             className="inline-flex items-center space-x-2 px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-2xs transition-all hover:scale-105"
             title="Start direct audio call with your assigned support specialist"
           >
@@ -495,14 +533,55 @@ export default function TicketDetailPage() {
         </form>
       </div>
 
+      {/* Incoming Call Ringing Alert from Agent */}
+      {incomingCall && (
+        <div className="fixed top-6 right-6 z-50 bg-slate-900 border-2 border-emerald-500 rounded-2xl p-5 shadow-2xl max-w-sm text-white animate-pulse">
+          <div className="flex items-center space-x-3 mb-3">
+            <div className="w-11 h-11 rounded-full bg-emerald-600 flex items-center justify-center animate-bounce">
+              <PhoneCall className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <h4 className="font-bold text-sm text-white flex items-center space-x-1.5">
+                <span>Support Agent is Calling You!</span>
+              </h4>
+              <p className="text-xs text-emerald-300 font-medium">
+                {incomingCall.caller_name} (Support Operations)
+              </p>
+            </div>
+          </div>
+          <p className="text-[11px] text-slate-400 mb-3">
+            Agent wants to assist you regarding Ticket #{ticket.ticket_number}
+          </p>
+          <div className="flex items-center space-x-2 pt-1">
+            <button
+              onClick={handleAnswerIncomingCall}
+              className="flex-1 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center space-x-1.5 shadow-md shadow-emerald-600/40 transition-all hover:scale-105"
+            >
+              <Phone className="w-4 h-4" />
+              <span>Accept & Speak</span>
+            </button>
+            <button
+              onClick={handleDeclineIncomingCall}
+              className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold text-xs transition-colors"
+            >
+              Decline
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Voice Call Modal (Feature 2) */}
       <VoiceCallModal
         isOpen={showCallModal}
-        onClose={() => setShowCallModal(false)}
+        onClose={() => {
+          setShowCallModal(false);
+          setIsAnswering(false);
+        }}
         recipientName={ticket.assigned_agent_name || 'Support Specialist'}
         recipientRole="Support Specialist"
         ticketId={ticket.id}
         ticketNumber={ticket.ticket_number}
+        isIncoming={isAnswering}
         onCallCompleted={() => loadTicketData()}
       />
 

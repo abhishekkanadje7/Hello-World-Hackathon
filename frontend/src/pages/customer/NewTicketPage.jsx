@@ -40,7 +40,6 @@ export default function NewTicketPage() {
   const [subject, setSubject] = useState('');
   const [category, setCategory] = useState('Technical Support');
   const [environment, setEnvironment] = useState('Web Application');
-  const [customerPriority, setCustomerPriority] = useState('Normal');
   const [allowCall, setAllowCall] = useState(false);
   const [phoneNumber, setPhoneNumber] = useState('');
   const [description, setDescription] = useState('');
@@ -113,7 +112,7 @@ export default function NewTicketPage() {
         attachments: attachments,
         allow_call: allowCall,
         customer_phone: phoneNumber.trim(),
-        customer_priority: customerPriority
+        customer_priority: 'Normal'
       });
       setResult(ticket);
     } catch (err) {
@@ -298,41 +297,6 @@ export default function NewTicketPage() {
             </div>
           </div>
 
-          {/* ३. Customer Stated Priority (Feature 3) */}
-          <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-2">
-            <div className="flex items-center justify-between">
-              <label className="text-xs font-bold text-slate-800 flex items-center space-x-1.5">
-                <Flame className="w-4 h-4 text-amber-500" />
-                <span>Customer Perceived Urgency & Impact</span>
-              </label>
-              <span className="text-[11px] text-slate-500">Your stated business impact</span>
-            </div>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">
-              {[
-                { key: 'Low', label: 'Low', desc: 'Informational question' },
-                { key: 'Normal', label: 'Normal', desc: 'Standard business inquiry' },
-                { key: 'High', label: 'High', desc: 'Impacting my work/team' },
-                { key: 'Urgent', label: 'Urgent', desc: 'Critical operational blocker' }
-              ].map(opt => (
-                <button
-                  type="button"
-                  key={opt.key}
-                  onClick={() => setCustomerPriority(opt.key)}
-                  className={`p-2.5 rounded-lg border text-left transition-all ${
-                    customerPriority === opt.key
-                      ? 'border-blue-600 bg-blue-50/70 text-blue-900 ring-2 ring-blue-500/20'
-                      : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300'
-                  }`}
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold">{opt.label}</span>
-                    {customerPriority === opt.key && <Check className="w-3.5 h-3.5 text-blue-600" />}
-                  </div>
-                  <span className="text-[10px] text-slate-500 block mt-0.5 leading-tight">{opt.desc}</span>
-                </button>
-              ))}
-            </div>
-          </div>
 
           {/* ४. Direct Audio Calling Option (Feature 2) */}
           <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-3">

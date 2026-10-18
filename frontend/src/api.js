@@ -166,6 +166,32 @@ export async function logTicketCall(ticketId, durationSeconds, callStatus = 'Com
   });
 }
 
+export async function initiateTicketCall(ticketId, callerPhone = '') {
+  return request(`/tickets/${ticketId}/call/initiate`, {
+    method: 'POST',
+    body: JSON.stringify({ caller_phone: callerPhone })
+  });
+}
+
+export async function getTicketCallStatus(ticketId) {
+  return request(`/tickets/${ticketId}/call/status`, {
+    method: 'GET'
+  });
+}
+
+export async function answerTicketCall(ticketId) {
+  return request(`/tickets/${ticketId}/call/answer`, {
+    method: 'POST'
+  });
+}
+
+export async function endTicketCall(ticketId, durationSeconds = 0) {
+  return request(`/tickets/${ticketId}/call/end`, {
+    method: 'POST',
+    body: JSON.stringify({ duration_seconds: durationSeconds })
+  });
+}
+
 export async function updateTicketStatus(id, statusOrPayload, assigned_agent_id = null, assigned_agent_name = null, note = null) {
   let bodyPayload = {};
   if (typeof statusOrPayload === 'object' && statusOrPayload !== null) {

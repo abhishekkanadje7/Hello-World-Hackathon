@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   X, 
   ShieldAlert, 
@@ -14,11 +14,14 @@ import {
   UserCheck,
   Tag,
   Phone,
+  PhoneCall,
   Mail,
   Paperclip,
-  FileText
+  FileText,
+  MessageSquare,
+  Trash2
 } from 'lucide-react';
-import { updateTicketStatus } from '../api';
+import { updateTicketStatus, fetchTicketReplies, sendTicketReply } from '../api';
 
 export default function TicketDetailModal({ ticket, isOpen, onClose, onTicketUpdated, currentUser }) {
   if (!isOpen || !ticket) return null;
@@ -28,6 +31,98 @@ export default function TicketDetailModal({ ticket, isOpen, onClose, onTicketUpd
   const [note, setNote] = useState(ticket.resolution_note || '');
   const [saving, setSaving] = useState(false);
   const [previewImage, setPreviewImage] = useState(null);
+
+  // Feature 2: Replies & Communication Thread for Admin
+  const [replies, setReplies] = useState(ticket.replies || []);
+  const [replyText, setReplyText] = useState('');
+  const [isInternal, setIsInternal] = useState(false);
+  const [sendingReply, setSendingReply] = useState(false);
+  const [replyAttachments, setReplyAttachments] = useState([]);
+
+  useEffect(() => {
+    if (ticket) {
+      setStatus(ticket.status);
+      setAssignedAgent(ticket.assigned_agent || '');
+      setNote(ticket.resolution_note || '');
+      if (ticket.replies) setReplies(ticket.replies);
+    }
+  }, [ticket]);
+
+  // Live polling for replies every 2.5s while modal is open
+  useEffect(() => {
+    if (!isOpen || !ticket?.id) return;
+    let isMounted = true;
+
+    const loadReplies = async () => {
+      try {
+        const reps = await fetchTicketReplies(ticket.id);
+        if (isMounted && Array.isArray(reps)) {
+          setReplies(reps);
+        }
+      } catch (err) {
+        // Silent catch for background polling
+      }
+    };
+
+    loadReplies();
+    const interval = setInterval(loadReplies, 2500);
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, [isOpen, ticket?.id]);
+
+  const handleFileUpload = (e) => {
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
+    if (replyAttachments.length + files.length > 4) {
+      alert('You can attach up to 4 files per reply.');
+      return;
+    }
+
+    files.forEach(file => {
+      if (file.size > 3 * 1024 * 1024) {
+        alert(`File "${file.name}" exceeds 3MB limit.`);
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = () => {
+        setReplyAttachments(prev => [
+          ...prev,
+          {
+            name: file.name,
+            size: file.size,
+            type: file.type,
+            data: reader.result
+          }
+        ]);
+      };
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const removeReplyAttachment = (index) => {
+    setReplyAttachments(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const handleSendReply = async (e) => {
+    e.preventDefault();
+    if (!replyText.trim() && replyAttachments.length === 0) return;
+
+    setSendingReply(true);
+    try {
+      await sendTicketReply(ticket.id, replyText.trim() || 'Attached files.', isInternal, replyAttachments);
+      setReplyText('');
+      setReplyAttachments([]);
+      setIsInternal(false);
+      const reps = await fetchTicketReplies(ticket.id);
+      if (Array.isArray(reps)) setReplies(reps);
+    } catch (err) {
+      alert(err.message || 'Failed to post reply');
+    } finally {
+      setSendingReply(false);
+    }
+  };
 
   const expl = ticket.explainability || {};
   const factors = expl.factors || [];
@@ -279,6 +374,174 @@ export default function TicketDetailModal({ ticket, isOpen, onClose, onTicketUpd
               onChange={(e) => setNote(e.target.value)}
               className="w-full p-3 bg-slate-900 border border-slate-700 rounded-xl text-xs text-slate-200 focus:outline-none focus:border-indigo-500 leading-relaxed font-mono"
             />
+          </div>
+
+          {/* Feature 2: Conversation Thread & Admin Reply Box */}
+          <div className="bg-slate-800/50 rounded-xl border border-slate-700/80 p-5 space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-700/60 pb-3">
+              <div className="flex items-center space-x-2">
+                <MessageSquare className="w-4 h-4 text-indigo-400" />
+                <h3 className="text-sm font-bold text-white uppercase tracking-wider">
+                  Live Conversation Thread ({replies?.length || 0})
+                </h3>
+              </div>
+              <span className="text-[11px] text-slate-400">
+                Customer & Agent Messages
+              </span>
+            </div>
+
+            {/* Replies List */}
+            {replies && replies.length > 0 ? (
+              <div className="space-y-3 max-h-72 overflow-y-auto pr-1">
+                {replies.map((rep, idx) => {
+                  const isCallLog = rep.message?.includes('📞 Direct Audio Call');
+                  return (
+                    <div
+                      key={rep.id || idx}
+                      className={`p-3.5 rounded-xl border text-xs leading-relaxed ${
+                        isCallLog
+                          ? 'bg-emerald-950/40 border-emerald-700/80 text-emerald-100 ring-1 ring-emerald-500/30'
+                          : rep.is_internal
+                          ? 'bg-amber-950/40 border-amber-800/60 text-amber-100'
+                          : rep.author_role === 'agent'
+                          ? 'bg-blue-950/40 border-blue-800/60 text-blue-100'
+                          : rep.author_role === 'admin'
+                          ? 'bg-purple-950/40 border-purple-800/60 text-purple-100'
+                          : 'bg-slate-900/80 border-slate-700/70 text-slate-200'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between text-[11px] mb-1.5 opacity-90">
+                        <div className="flex items-center space-x-1.5">
+                          {isCallLog ? (
+                            <PhoneCall className="w-3.5 h-3.5 text-emerald-400" />
+                          ) : null}
+                          <strong className="text-white">{rep.author_name}</strong>
+                          <span className="px-1.5 py-0.2 rounded text-[9px] uppercase font-mono bg-slate-900/80 border border-slate-700">
+                            {isCallLog ? 'Audio Call' : rep.author_role}
+                          </span>
+                          {rep.is_internal && (
+                            <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40">
+                              🔒 Internal Note
+                            </span>
+                          )}
+                        </div>
+                        <span className="font-mono text-[10px] text-slate-400">
+                          {new Date(rep.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                      </div>
+
+                      <p className="whitespace-pre-wrap">{rep.message}</p>
+
+                      {/* Attachments inside reply */}
+                      {rep.attachments && rep.attachments.length > 0 && (
+                        <div className="mt-2.5 pt-2 border-t border-slate-700/40 flex flex-wrap gap-2">
+                          {rep.attachments.map((file, fi) => (
+                            <div
+                              key={fi}
+                              onClick={() => file.type?.startsWith('image/') && setPreviewImage(file.data)}
+                              className={`p-1.5 rounded-lg border border-slate-700 bg-slate-900 flex items-center space-x-1.5 text-[11px] ${
+                                file.type?.startsWith('image/') ? 'cursor-pointer hover:border-indigo-400' : ''
+                              }`}
+                            >
+                              {file.type?.startsWith('image/') ? (
+                                <img src={file.data} alt={file.name} className="w-6 h-6 rounded object-cover" />
+                              ) : (
+                                <FileText className="w-3.5 h-3.5 text-slate-400" />
+                              )}
+                              <span className="font-medium text-slate-200 max-w-[120px] truncate">{file.name}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="py-4 text-center text-xs text-slate-500 bg-slate-900/40 rounded-lg border border-slate-800">
+                No conversation messages yet. You can post a message or internal note below.
+              </div>
+            )}
+
+            {/* Admin Reply Composer Form */}
+            <form onSubmit={handleSendReply} className="pt-3 border-t border-slate-700/60 space-y-2.5">
+              <div className="flex items-center justify-between text-xs">
+                <span className="font-semibold text-slate-300">
+                  {isInternal ? '📝 Internal Admin Note (Hidden from Customer)' : '💬 Send Reply to Customer'}
+                </span>
+                <label className="flex items-center space-x-1.5 text-xs text-amber-300 cursor-pointer bg-amber-950/40 px-2 py-0.5 rounded border border-amber-800/60 hover:bg-amber-950/70 transition-colors">
+                  <input
+                    type="checkbox"
+                    checked={isInternal}
+                    onChange={(e) => setIsInternal(e.target.checked)}
+                    className="rounded text-amber-500 focus:ring-0"
+                  />
+                  <span>Mark as Internal Note</span>
+                </label>
+              </div>
+
+              <textarea
+                value={replyText}
+                onChange={(e) => setReplyText(e.target.value)}
+                rows={3}
+                placeholder={
+                  isInternal
+                    ? 'Write internal triage observation, operational note, or notes for agents...'
+                    : `Write a direct reply to ${ticket.customer_name}...`
+                }
+                className={`w-full p-3 rounded-xl bg-slate-900 border text-xs text-slate-200 focus:outline-none transition-colors ${
+                  isInternal ? 'border-amber-700/60 focus:border-amber-500' : 'border-slate-700 focus:border-indigo-500'
+                }`}
+              />
+
+              {/* Attachment Picker & Previews */}
+              <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+                <div className="flex items-center space-x-2">
+                  <label className="flex items-center space-x-1 px-2.5 py-1.5 rounded-lg border border-slate-700 bg-slate-900 hover:bg-slate-800 text-slate-300 text-xs cursor-pointer transition-colors">
+                    <Paperclip className="w-3.5 h-3.5" />
+                    <span>Attach Files</span>
+                    <input
+                      type="file"
+                      multiple
+                      accept="image/*,.pdf,.doc,.docx,.txt"
+                      onChange={handleFileUpload}
+                      className="hidden"
+                    />
+                  </label>
+                  <span className="text-[10px] text-slate-500">Max 4 files (3MB each)</span>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={sendingReply || (!replyText.trim() && replyAttachments.length === 0)}
+                  className={`px-4 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center space-x-1.5 ${
+                    isInternal
+                      ? 'bg-amber-600 hover:bg-amber-500 text-white'
+                      : 'bg-indigo-600 hover:bg-indigo-500 text-white'
+                  } disabled:opacity-50 disabled:cursor-not-allowed`}
+                >
+                  <Send className="w-3.5 h-3.5" />
+                  <span>{sendingReply ? 'Sending...' : isInternal ? 'Save Internal Note' : 'Send Reply'}</span>
+                </button>
+              </div>
+
+              {replyAttachments.length > 0 && (
+                <div className="flex flex-wrap gap-2 pt-1">
+                  {replyAttachments.map((file, idx) => (
+                    <div key={idx} className="flex items-center space-x-1 px-2 py-1 bg-slate-900 rounded-lg border border-slate-700 text-[11px] text-slate-300">
+                      <span className="truncate max-w-[140px]">{file.name}</span>
+                      <button
+                        type="button"
+                        onClick={() => removeReplyAttachment(idx)}
+                        className="text-rose-400 hover:text-rose-300 p-0.5"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </form>
           </div>
 
           {/* Agent Action Controls */}

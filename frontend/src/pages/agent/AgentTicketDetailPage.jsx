@@ -7,7 +7,12 @@ import {
   releaseTicket,
   updateTicketStatus,
   sendTicketReply,
-  fetchKbArticles
+  fetchKbArticles,
+  fetchTicketReplies,
+  initiateTicketCall,
+  getTicketCallStatus,
+  answerTicketCall,
+  endTicketCall
 } from '../../api';
 import VoiceCallModal from '../../components/VoiceCallModal';
 import { 
@@ -42,6 +47,8 @@ export default function AgentTicketDetailPage() {
   // Calling & image preview modal states
   const [showCallModal, setShowCallModal] = useState(false);
   const [previewImage, setPreviewImage] = useState(null);
+  const [incomingCall, setIncomingCall] = useState(null);
+  const [isAnswering, setIsAnswering] = useState(false);
 
   // Status update state
   const [updatingStatus, setUpdatingStatus] = useState(false);
@@ -62,7 +69,8 @@ export default function AgentTicketDetailPage() {
   const loadTicket = async () => {
     try {
       const data = await fetchTicketById(id);
-      setTicket(data);
+      const reps = await fetchTicketReplies(id).catch(() => data?.replies || []);
+      setTicket({ ...data, replies: reps });
       setErrorMsg('');
     } catch (err) {
       setErrorMsg(err.message || 'Failed to load ticket.');
@@ -75,7 +83,46 @@ export default function AgentTicketDetailPage() {
     loadTicket();
     fetchKbArticles().then(setKbArticles).catch(() => {});
     import('../../api').then(mod => mod.fetchCannedReplies().then(setCannedReplies).catch(() => {}));
+
+    // LIVE POLLING: Auto sync every 2.5 seconds for live messages, images, and incoming calls
+    const pollInterval = setInterval(async () => {
+      loadTicket();
+      try {
+        const callStat = await getTicketCallStatus(id);
+        if (callStat && callStat.status === 'ringing' && callStat.caller_role !== 'agent') {
+          setIncomingCall(callStat);
+        } else if (callStat && (callStat.status === 'ended' || callStat.status === 'none')) {
+          setIncomingCall(null);
+        }
+      } catch (_) {}
+    }, 2500);
+
+    return () => clearInterval(pollInterval);
   }, [id]);
+
+  const handleStartCall = async () => {
+    try {
+      await initiateTicketCall(ticket.id, ticket.customer_phone);
+    } catch (_) {}
+    setIsAnswering(false);
+    setShowCallModal(true);
+  };
+
+  const handleAnswerIncomingCall = async () => {
+    try {
+      await answerTicketCall(ticket.id);
+    } catch (_) {}
+    setIncomingCall(null);
+    setIsAnswering(true);
+    setShowCallModal(true);
+  };
+
+  const handleDeclineIncomingCall = async () => {
+    try {
+      await endTicketCall(ticket.id, 0);
+    } catch (_) {}
+    setIncomingCall(null);
+  };
 
   const handleApplyCanned = (cr) => {
     let replaced = cr.content
@@ -345,7 +392,7 @@ export default function AgentTicketDetailPage() {
         <div className="flex flex-wrap items-center gap-3">
           {/* Direct Audio Calling Button (Feature 2) */}
           <button
-            onClick={() => setShowCallModal(true)}
+            onClick={handleStartCall}
             className="px-4 py-2 rounded-xl text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white flex items-center space-x-1.5 shadow-lg shadow-emerald-600/30 transition-all hover:scale-105"
             title={ticket.customer_phone ? `Direct Call: ${ticket.customer_phone}` : 'Initiate voice call with customer'}
           >
@@ -884,14 +931,55 @@ export default function AgentTicketDetailPage() {
         </div>
       )}
 
+      {/* Incoming Call Ringing Alert (Feature 2) */}
+      {incomingCall && (
+        <div className="fixed top-6 right-6 z-50 bg-slate-900 border-2 border-emerald-500 rounded-2xl p-5 shadow-2xl max-w-sm text-white animate-pulse">
+          <div className="flex items-center space-x-3 mb-3">
+            <div className="w-11 h-11 rounded-full bg-emerald-600 flex items-center justify-center animate-bounce">
+              <PhoneCall className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <h4 className="font-bold text-sm text-white flex items-center space-x-1.5">
+                <span>Incoming Customer Call!</span>
+              </h4>
+              <p className="text-xs text-emerald-300 font-medium">
+                {incomingCall.caller_name} {incomingCall.caller_phone ? `(${incomingCall.caller_phone})` : ''}
+              </p>
+            </div>
+          </div>
+          <p className="text-[11px] text-slate-400 mb-3">
+            Customer is calling regarding Ticket #{ticket.ticket_number}
+          </p>
+          <div className="flex items-center space-x-2 pt-1">
+            <button
+              onClick={handleAnswerIncomingCall}
+              className="flex-1 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center space-x-1.5 shadow-md shadow-emerald-600/40 transition-all hover:scale-105"
+            >
+              <Phone className="w-4 h-4" />
+              <span>Accept & Speak</span>
+            </button>
+            <button
+              onClick={handleDeclineIncomingCall}
+              className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold text-xs transition-colors"
+            >
+              Decline
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Voice Call Modal (Feature 2) */}
       <VoiceCallModal
         isOpen={showCallModal}
-        onClose={() => setShowCallModal(false)}
+        onClose={() => {
+          setShowCallModal(false);
+          setIsAnswering(false);
+        }}
         ticketId={ticket.id}
         partyName={ticket.customer_name}
         partyPhone={ticket.customer_phone}
-        isAgentCalling={true}
+        recipientRole="Customer"
+        isIncoming={isAnswering}
         onCallLogged={loadTicket}
       />
 
