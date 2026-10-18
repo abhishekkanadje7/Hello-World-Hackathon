@@ -59,25 +59,25 @@ export default function Navbar({ wsConnected }) {
 
   return (
     <header className="bg-white/95 backdrop-blur-md border-b border-slate-200 sticky top-0 z-40 shadow-sm">
-      {/* Top micro banner for Event / Hackathon branding */}
-      <div className="bg-slate-50 border-b border-slate-200 px-4 py-1.5 text-xs flex items-center justify-between text-slate-600">
+      {/* Professional Enterprise Status Bar */}
+      <div className="bg-slate-900 border-b border-slate-800 px-4 py-1.5 text-xs flex items-center justify-between text-slate-300">
         <div className="flex items-center space-x-2">
-          <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-700 border border-blue-200">
-            HELLO WORLD 2026
+          <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-blue-500/20 text-blue-300 border border-blue-500/30">
+            ENTERPRISE
           </span>
-          <span className="hidden sm:inline font-medium text-slate-500">
-            Advanced Track • PS 4: Predictive Support Triage & Sentiment Router
+          <span className="hidden sm:inline font-medium text-slate-400">
+            Predictive Support Triage & Cognitive Sentiment Router
           </span>
         </div>
         <div className="flex items-center space-x-3">
           <div className="flex items-center space-x-1.5">
-            <span className={`w-2 h-2 rounded-full ${wsConnected ? 'bg-emerald-500 animate-pulse' : 'bg-emerald-500'}`} />
-            <span className="text-[11px] font-mono font-medium text-slate-700">
-              {wsConnected ? 'LIVE SYSTEM' : 'LIVE SYSTEM'}
+            <span className={`w-2 h-2 rounded-full ${wsConnected ? 'bg-emerald-400 animate-pulse' : 'bg-emerald-400'}`} />
+            <span className="text-[11px] font-mono font-medium text-emerald-400">
+              SYSTEM ONLINE
             </span>
           </div>
-          <span className="text-slate-300">|</span>
-          <span className="text-slate-600 font-semibold">Team TriageX</span>
+          <span className="text-slate-700">|</span>
+          <span className="text-slate-400 font-semibold text-[11px]">Cloud PostgreSQL</span>
         </div>
       </div>
 

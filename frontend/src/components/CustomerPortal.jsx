@@ -182,9 +182,9 @@ export default function CustomerPortal({ currentUser, onTicketCreated, tickets =
         <div className="flex items-center justify-between">
           <label className="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center space-x-1.5">
             <Sparkles className="w-4 h-4 text-amber-400" />
-            <span>⚡ 1-Click Scenarios for Hackathon Judges</span>
+            <span>⚡ Sample Inquiry Presets</span>
           </label>
-          <span className="text-[11px] text-slate-500">Click any preset to auto-fill realistic test cases</span>
+          <span className="text-[11px] text-slate-500">Click any preset to auto-fill sample inquiry</span>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
           {DEMO_PRESETS.map((p, idx) => (

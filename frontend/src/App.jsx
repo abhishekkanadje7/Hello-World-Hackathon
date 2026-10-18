@@ -140,9 +140,9 @@ function AppContent() {
             <span>• Predictive Customer Support Triage & Sentiment Router</span>
           </div>
           <div className="flex items-center space-x-4">
-            <span>Hello World 2026 | ACSES × Semicolon</span>
+            <span>Enterprise Support Intelligence Platform</span>
             <span className="text-slate-700">|</span>
-            <span className="text-blue-400 font-semibold">Team TriageX</span>
+            <span className="text-blue-400 font-semibold">TriageX Operations</span>
           </div>
         </div>
       </footer>

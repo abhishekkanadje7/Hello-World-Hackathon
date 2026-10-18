@@ -50,7 +50,7 @@ export default function LandingPage() {
       <section className="text-center space-y-6 pt-4 pb-2">
         <div className="inline-flex flex-wrap items-center justify-center gap-2 px-3.5 py-1.5 rounded-full bg-blue-50/80 text-blue-700 text-xs font-semibold border border-blue-200/60 shadow-xs">
           <span className="flex h-2 w-2 rounded-full bg-emerald-500 animate-pulse"></span>
-          <span>Hello World 2026 / SIH PS 4</span>
+          <span>Enterprise Triage Platform</span>
           <span className="text-blue-300">•</span>
           <span>Cognitive AI Routing Engine</span>
           <span className="text-blue-300">•</span>
@@ -321,32 +321,35 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* 4. Credentials & Quick Access Callout */}
-      <section className="bg-gradient-to-r from-blue-900 via-indigo-900 to-slate-900 text-white rounded-3xl p-8 sm:p-10 shadow-xl space-y-6">
+      {/* 4. Enterprise Ready Callout (Clean & Professional) */}
+      <section className="bg-gradient-to-r from-slate-900 via-slate-850 to-blue-950 text-white rounded-3xl p-8 sm:p-12 shadow-xl space-y-6 border border-slate-800">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
-          <div className="space-y-2 max-w-xl">
-            <div className="text-xs font-bold text-cyan-400 uppercase tracking-wider">Evaluation & Hackathon Access</div>
-            <h3 className="text-2xl font-black tracking-tight">Ready to test the live platform?</h3>
+          <div className="space-y-3 max-w-2xl">
+            <div className="inline-flex items-center space-x-2 text-xs font-bold text-blue-400 uppercase tracking-wider bg-blue-950/60 px-3 py-1 rounded-md border border-blue-800/60">
+              <ShieldAlert className="w-3.5 h-3.5 text-blue-400" />
+              <span>Enterprise SLA Compliance</span>
+            </div>
+            <h3 className="text-2xl sm:text-3xl font-black tracking-tight">
+              Transform Your Customer Support Velocity
+            </h3>
             <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
-              Use the authenticated Administrator account to inspect real-time telemetry, test SLA dispatch queues, and calibrate NLP weights.
+              Eliminate ticket backlogs and protect enterprise relationships with automated cognitive dispatch, real-time sentiment telemetry, and SLA guarantees.
             </p>
           </div>
 
-          <div className="bg-white/10 backdrop-blur-md border border-white/20 p-5 rounded-2xl space-y-3 text-xs min-w-[280px]">
-            <div className="font-bold text-white border-b border-white/10 pb-2 flex items-center justify-between">
-              <span>Admin Credentials</span>
-              <span className="text-[10px] text-emerald-400 bg-emerald-950/60 px-2 py-0.5 rounded border border-emerald-700">Pre-Configured</span>
-            </div>
-            <div className="space-y-1 font-mono">
-              <div className="text-slate-300">Email: <span className="text-cyan-300 select-all font-bold">abhishekkanadje7@gmail.com</span></div>
-              <div className="text-slate-300">Password: <span className="text-cyan-300 select-all font-bold">Abhi*2007...</span></div>
-            </div>
+          <div className="flex flex-col sm:flex-row items-center gap-3">
+            <Link
+              to="/register"
+              className="w-full sm:w-auto px-7 py-3.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs flex items-center justify-center space-x-2 transition-all shadow-md active:scale-98"
+            >
+              <span>Get Started</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </Link>
             <Link
               to="/login"
-              className="mt-2 w-full py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg font-bold text-xs flex items-center justify-center space-x-1.5 transition-all shadow-md"
+              className="w-full sm:w-auto px-7 py-3.5 rounded-xl bg-white/10 hover:bg-white/15 text-white border border-white/20 font-bold text-xs flex items-center justify-center space-x-2 transition-all"
             >
-              <span>Sign In as Admin</span>
-              <ArrowRight className="w-3.5 h-3.5" />
+              <span>Portal Sign In</span>
             </Link>
           </div>
         </div>
