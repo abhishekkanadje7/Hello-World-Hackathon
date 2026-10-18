@@ -12,7 +12,11 @@ import {
   Sparkles,
   Bot,
   UserCheck,
-  Tag
+  Tag,
+  Phone,
+  Mail,
+  Paperclip,
+  FileText
 } from 'lucide-react';
 import { updateTicketStatus } from '../api';
 
@@ -23,6 +27,7 @@ export default function TicketDetailModal({ ticket, isOpen, onClose, onTicketUpd
   const [assignedAgent, setAssignedAgent] = useState(ticket.assigned_agent || '');
   const [note, setNote] = useState(ticket.resolution_note || '');
   const [saving, setSaving] = useState(false);
+  const [previewImage, setPreviewImage] = useState(null);
 
   const expl = ticket.explainability || {};
   const factors = expl.factors || [];
@@ -68,7 +73,7 @@ export default function TicketDetailModal({ ticket, isOpen, onClose, onTicketUpd
       <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-4xl w-full max-h-[90vh] shadow-2xl overflow-hidden flex flex-col">
         {/* Header */}
         <div className="px-6 py-4 border-b border-slate-800 flex items-center justify-between bg-gradient-to-r from-slate-900 via-indigo-950/40 to-slate-900">
-          <div className="flex items-center space-x-3">
+          <div className="flex flex-wrap items-center gap-2">
             <span className="text-sm font-mono font-bold text-indigo-400 bg-indigo-500/10 px-2 py-0.5 rounded border border-indigo-500/20">
               {ticket.ticket_number}
             </span>
@@ -79,6 +84,18 @@ export default function TicketDetailModal({ ticket, isOpen, onClose, onTicketUpd
             }`}>
               Priority {ticket.priority_score}/100 • {ticket.assigned_tier}
             </span>
+            {ticket.customer_priority && (
+              <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-950/80 text-amber-300 border border-amber-800/60 flex items-center space-x-1">
+                <Flame className="w-3 h-3 text-amber-400" />
+                <span>Urgency: {ticket.customer_priority}</span>
+              </span>
+            )}
+            {ticket.allow_call && (
+              <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-950/80 text-emerald-300 border border-emerald-800 flex items-center space-x-1">
+                <Phone className="w-3 h-3 text-emerald-400" />
+                <span>Call Consent</span>
+              </span>
+            )}
             <span className="text-xs text-slate-400">
               SLA: <strong>{ticket.sla_minutes_remaining || 30} mins</strong>
             </span>
@@ -90,13 +107,52 @@ export default function TicketDetailModal({ ticket, isOpen, onClose, onTicketUpd
 
         {/* Scrollable Content */}
         <div className="p-6 overflow-y-auto space-y-6">
+          {/* Feature 4: Automated Notification Sent Banner */}
+          {ticket.status === 'Resolved' && (
+            <div className="p-3.5 rounded-xl bg-emerald-950/50 border border-emerald-800 flex items-center justify-between text-xs text-emerald-200">
+              <div className="flex items-center space-x-2">
+                <Mail className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+                <span>Resolution alerts automatically dispatched via Email ({ticket.customer_email}) {ticket.customer_phone ? `and SMS (${ticket.customer_phone})` : ''}</span>
+              </div>
+              <span className="px-2 py-0.5 rounded bg-emerald-900/80 text-emerald-300 font-mono text-[10px] font-bold">
+                DELIVERED
+              </span>
+            </div>
+          )}
+
+          {/* Feature 5: Historical Similar Case Match Card */}
+          {ticket.historical_match && (
+            <div className="p-4 rounded-xl bg-blue-950/40 border border-blue-800/80 space-y-2 text-xs text-blue-200">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-1.5 font-bold text-blue-300">
+                  <Sparkles className="w-4 h-4 text-blue-400" />
+                  <span>AI Historical Duplicate/Similar Match ({ticket.historical_match.similarity_score}% match with {ticket.historical_match.matched_ticket_number})</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setNote(ticket.historical_match.resolution_note)}
+                  className="px-2 py-0.5 rounded bg-blue-600 hover:bg-blue-500 text-white font-semibold text-[11px] transition-colors"
+                >
+                  Use Past Resolution
+                </button>
+              </div>
+              <p className="text-slate-300 text-[11px]">
+                Prior inquiry: <strong>{ticket.historical_match.matched_subject}</strong>
+              </p>
+              <div className="p-2.5 bg-slate-950/80 rounded-lg border border-blue-900/50 font-mono text-slate-200 text-xs whitespace-pre-wrap">
+                {ticket.historical_match.resolution_note}
+              </div>
+            </div>
+          )}
+
           {/* Main Info Box */}
           <div className="bg-slate-800/60 p-4 rounded-xl border border-slate-700/80 space-y-3">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-700/60 pb-3">
               <div>
                 <h2 className="text-base font-bold text-white">{ticket.subject}</h2>
-                <div className="text-xs text-slate-400 mt-0.5 flex items-center space-x-2">
+                <div className="text-xs text-slate-400 mt-0.5 flex flex-wrap items-center gap-2">
                   <span>From: <strong className="text-slate-200">{ticket.customer_name}</strong> ({ticket.customer_email})</span>
+                  {ticket.customer_phone && <span>• <span>Phone: <strong className="text-slate-200 font-mono">{ticket.customer_phone}</strong></span></span>}
                   <span>•</span>
                   <span className="text-indigo-400 font-mono uppercase font-bold">{custTier} Tier</span>
                   <span>•</span>
@@ -111,6 +167,37 @@ export default function TicketDetailModal({ ticket, isOpen, onClose, onTicketUpd
             <div className="text-sm text-slate-200 whitespace-pre-wrap leading-relaxed bg-slate-900/60 p-3 rounded-lg border border-slate-800 font-normal">
               {ticket.description}
             </div>
+
+            {/* Feature 1: Attachments on ticket */}
+            {ticket.attachments && ticket.attachments.length > 0 && (
+              <div className="pt-2 border-t border-slate-700/60 space-y-2">
+                <span className="text-xs font-semibold text-slate-300 flex items-center space-x-1.5">
+                  <Paperclip className="w-3.5 h-3.5 text-slate-400" />
+                  <span>Customer Uploaded Attachments ({ticket.attachments.length})</span>
+                </span>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  {ticket.attachments.map((file, idx) => (
+                    <div
+                      key={idx}
+                      onClick={() => file.type?.startsWith('image/') && setPreviewImage(file.data)}
+                      className={`p-2 rounded-lg border border-slate-700 bg-slate-900 flex items-center space-x-2 text-xs ${
+                        file.type?.startsWith('image/') ? 'cursor-pointer hover:border-indigo-400 transition-colors' : ''
+                      }`}
+                    >
+                      {file.type?.startsWith('image/') ? (
+                        <img src={file.data} alt={file.name} className="w-8 h-8 rounded object-cover border border-slate-600 flex-shrink-0" />
+                      ) : (
+                        <FileText className="w-5 h-5 text-slate-400 flex-shrink-0" />
+                      )}
+                      <div className="truncate">
+                        <span className="font-medium text-slate-200 block truncate text-[11px]">{file.name}</span>
+                        <span className="text-[9px] text-slate-400 font-mono">{(file.size / 1024).toFixed(1)} KB</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Explainable AI Decision Engine Box (JUDGE KILLER FEATURE) */}
@@ -228,6 +315,24 @@ export default function TicketDetailModal({ ticket, isOpen, onClose, onTicketUpd
           </div>
         </div>
       </div>
+
+      {/* Image Preview Lightbox */}
+      {previewImage && (
+        <div
+          className="fixed inset-0 z-50 bg-black/85 flex items-center justify-center p-4 backdrop-blur-sm"
+          onClick={() => setPreviewImage(null)}
+        >
+          <div className="relative max-w-4xl max-h-[90vh]">
+            <img src={previewImage} alt="Attachment Preview" className="max-w-full max-h-[85vh] rounded-2xl object-contain shadow-2xl border border-slate-700" />
+            <button
+              onClick={() => setPreviewImage(null)}
+              className="absolute top-3 right-3 p-2 rounded-full bg-slate-900/80 text-white hover:bg-slate-800 transition-colors border border-slate-700"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

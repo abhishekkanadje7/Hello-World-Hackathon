@@ -9,6 +9,19 @@ import {
   sendTicketReply,
   fetchKbArticles
 } from '../../api';
+import VoiceCallModal from '../../components/VoiceCallModal';
+import { 
+  Phone, 
+  PhoneCall, 
+  Paperclip, 
+  UploadCloud, 
+  X, 
+  Flame, 
+  Sparkles, 
+  Mail, 
+  FileText, 
+  Image as ImageIcon 
+} from 'lucide-react';
 
 export default function AgentTicketDetailPage() {
   const { id } = useParams();
@@ -24,6 +37,11 @@ export default function AgentTicketDetailPage() {
   const [replyText, setReplyText] = useState('');
   const [isInternal, setIsInternal] = useState(false);
   const [sendingReply, setSendingReply] = useState(false);
+  const [replyAttachments, setReplyAttachments] = useState([]);
+
+  // Calling & image preview modal states
+  const [showCallModal, setShowCallModal] = useState(false);
+  const [previewImage, setPreviewImage] = useState(null);
 
   // Status update state
   const [updatingStatus, setUpdatingStatus] = useState(false);
@@ -66,6 +84,12 @@ export default function AgentTicketDetailPage() {
       .replace(/{{ticket_number}}/g, ticket.ticket_number || '');
     setReplyText(replaced);
     setShowCannedModal(false);
+  };
+
+  const handleApplyHistoricalResolution = () => {
+    if (!ticket?.historical_match?.resolution_note) return;
+    setReplyText(`Hello ${ticket.customer_name},\n\nBased on a previously verified resolution for this issue:\n\n${ticket.historical_match.resolution_note}\n\nPlease let us know if this solves your issue!`);
+    setIsInternal(false);
   };
 
   const handleClaim = async () => {
@@ -142,15 +166,49 @@ export default function AgentTicketDetailPage() {
     }
   };
 
+  const handleFileUpload = (e) => {
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
+    if (replyAttachments.length + files.length > 4) {
+      alert('You can attach up to 4 files per reply.');
+      return;
+    }
+
+    files.forEach(file => {
+      if (file.size > 3 * 1024 * 1024) {
+        alert(`File "${file.name}" exceeds 3MB limit.`);
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = () => {
+        setReplyAttachments(prev => [
+          ...prev,
+          {
+            name: file.name,
+            size: file.size,
+            type: file.type,
+            data: reader.result
+          }
+        ]);
+      };
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const removeReplyAttachment = (index) => {
+    setReplyAttachments(prev => prev.filter((_, i) => i !== index));
+  };
+
   const handleSendReply = async (e) => {
     e.preventDefault();
-    if (!replyText.trim()) return;
+    if (!replyText.trim() && replyAttachments.length === 0) return;
 
     setSendingReply(true);
     setErrorMsg('');
     try {
-      await sendTicketReply(ticket.id, replyText, isInternal);
+      await sendTicketReply(ticket.id, replyText.trim() || 'Attached files.', isInternal, replyAttachments);
       setReplyText('');
+      setReplyAttachments([]);
       setIsInternal(false);
       await loadTicket();
       setSuccessMsg(isInternal ? 'Internal note added.' : 'Reply sent to customer.');
@@ -255,6 +313,18 @@ export default function AgentTicketDetailPage() {
             <span className="px-2 py-0.5 rounded text-xs bg-slate-800 text-slate-300 border border-slate-700">
               {ticket.category}
             </span>
+            {ticket.customer_priority && (
+              <span className="px-2.5 py-0.5 rounded text-xs bg-amber-950/60 text-amber-300 border border-amber-800/60 flex items-center space-x-1 font-medium">
+                <Flame className="w-3 h-3 text-amber-400" />
+                <span>Urgency: {ticket.customer_priority}</span>
+              </span>
+            )}
+            {ticket.allow_call && (
+              <span className="px-2.5 py-0.5 rounded text-xs bg-emerald-950/80 text-emerald-300 border border-emerald-800 flex items-center space-x-1 font-medium">
+                <Phone className="w-3 h-3 text-emerald-400" />
+                <span>Call Consent Granted</span>
+              </span>
+            )}
           </div>
 
           <h1 className="text-xl sm:text-2xl font-bold text-white tracking-tight">
@@ -263,6 +333,7 @@ export default function AgentTicketDetailPage() {
 
           <div className="flex flex-wrap items-center gap-4 text-xs text-slate-400 mt-2">
             <span>Customer: <strong className="text-slate-200">{ticket.customer_name}</strong> ({ticket.customer_email})</span>
+            {ticket.customer_phone && <span>• <span>Phone: <strong className="text-slate-200 font-mono">{ticket.customer_phone}</strong></span></span>}
             <span>•</span>
             <span>Created: {new Date(ticket.created_at).toLocaleString()}</span>
             <span>•</span>
@@ -272,6 +343,16 @@ export default function AgentTicketDetailPage() {
 
         {/* Action Controls */}
         <div className="flex flex-wrap items-center gap-3">
+          {/* Direct Audio Calling Button (Feature 2) */}
+          <button
+            onClick={() => setShowCallModal(true)}
+            className="px-4 py-2 rounded-xl text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white flex items-center space-x-1.5 shadow-lg shadow-emerald-600/30 transition-all hover:scale-105"
+            title={ticket.customer_phone ? `Direct Call: ${ticket.customer_phone}` : 'Initiate voice call with customer'}
+          >
+            <PhoneCall className="w-3.5 h-3.5" />
+            <span>Call Customer {ticket.customer_phone ? `(${ticket.customer_phone})` : ''}</span>
+          </button>
+
           {isUnassigned && ticket.status !== 'Resolved' && (
             <button
               onClick={handleClaim}
@@ -319,6 +400,52 @@ export default function AgentTicketDetailPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* Left 2 Cols: Description & Conversation Thread */}
         <div className="lg:col-span-2 space-y-6">
+          {/* Feature 4: Automated SMS & Email Notification Dispatched Banner */}
+          {ticket.status === 'Resolved' && (
+            <div className="p-4 rounded-2xl bg-emerald-950/40 border border-emerald-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-emerald-200">
+              <div className="flex items-start space-x-2.5">
+                <Mail className="w-5 h-5 text-emerald-400 flex-shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-bold text-white">
+                    Automated Resolution Alerts Dispatched
+                  </p>
+                  <p className="text-emerald-300/80 text-[11px] mt-0.5">
+                    Completion confirmation sent via <strong>Email</strong> to <code>{ticket.customer_email}</code>
+                    {ticket.customer_phone ? <span> and <strong>SMS</strong> to <code>{ticket.customer_phone}</code>.</span> : '.'}
+                  </p>
+                </div>
+              </div>
+              <span className="inline-flex items-center px-2.5 py-0.5 rounded text-[10px] font-bold bg-emerald-900/80 text-emerald-200 border border-emerald-700 self-start sm:self-auto">
+                Delivered
+              </span>
+            </div>
+          )}
+
+          {/* Feature 5: Historical Similar Case Match Banner */}
+          {ticket.historical_match && (
+            <div className="p-5 rounded-2xl bg-blue-950/40 border border-blue-800/80 space-y-3 text-xs text-blue-200">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-2 font-bold text-blue-300">
+                  <Sparkles className="w-4 h-4 text-blue-400" />
+                  <span>AI Historical Duplicate/Similar Match ({ticket.historical_match.similarity_score}% match with {ticket.historical_match.matched_ticket_number})</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleApplyHistoricalResolution}
+                  className="px-3 py-1 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-semibold text-xs transition-colors flex items-center space-x-1 shadow-md shadow-blue-600/30"
+                >
+                  <span>Apply Past Resolution</span>
+                </button>
+              </div>
+              <p className="text-slate-300 text-xs">
+                Matched Past Inquiry: <strong className="text-white font-mono">{ticket.historical_match.matched_subject}</strong>
+              </p>
+              <div className="p-3 bg-slate-950/80 rounded-xl border border-blue-900/50 text-slate-200 text-xs whitespace-pre-wrap font-mono">
+                {ticket.historical_match.resolution_note}
+              </div>
+            </div>
+          )}
+
           {/* Original Customer Message */}
           <div className="p-6 rounded-2xl bg-slate-900/60 border border-slate-800/80">
             <div className="flex items-center justify-between mb-3 text-xs text-slate-400">
@@ -328,6 +455,37 @@ export default function AgentTicketDetailPage() {
             <p className="text-slate-200 text-sm whitespace-pre-wrap leading-relaxed bg-slate-950/60 p-4 rounded-xl border border-slate-800/60 font-sans">
               {ticket.description}
             </p>
+
+            {/* Feature 1: Attachments on ticket */}
+            {ticket.attachments && ticket.attachments.length > 0 && (
+              <div className="mt-4 pt-4 border-t border-slate-800/80 space-y-2">
+                <span className="text-xs font-semibold text-slate-300 flex items-center space-x-1.5">
+                  <Paperclip className="w-3.5 h-3.5 text-slate-400" />
+                  <span>Customer Uploaded Attachments ({ticket.attachments.length})</span>
+                </span>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                  {ticket.attachments.map((file, idx) => (
+                    <div
+                      key={idx}
+                      onClick={() => file.type?.startsWith('image/') && setPreviewImage(file.data)}
+                      className={`p-2 rounded-xl border border-slate-800 bg-slate-950/80 flex items-center space-x-2 text-xs ${
+                        file.type?.startsWith('image/') ? 'cursor-pointer hover:border-blue-500 transition-colors' : ''
+                      }`}
+                    >
+                      {file.type?.startsWith('image/') ? (
+                        <img src={file.data} alt={file.name} className="w-9 h-9 rounded-lg object-cover border border-slate-700 flex-shrink-0" />
+                      ) : (
+                        <FileText className="w-6 h-6 text-slate-400 flex-shrink-0" />
+                      )}
+                      <div className="truncate">
+                        <span className="font-medium text-slate-200 block truncate text-[11px]">{file.name}</span>
+                        <span className="text-[9px] text-slate-500 font-mono">{(file.size / 1024).toFixed(1)} KB</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Conversation Thread */}
@@ -338,38 +496,68 @@ export default function AgentTicketDetailPage() {
 
             {ticket.replies && ticket.replies.length > 0 ? (
               <div className="space-y-4 mb-6">
-                {ticket.replies.map((rep, idx) => (
-                  <div
-                    key={rep.id || idx}
-                    className={`p-4 rounded-2xl border ${
-                      rep.is_internal
-                        ? 'bg-amber-950/30 border-amber-800/50 text-amber-100'
-                        : rep.author_role === 'agent' || rep.author_role === 'admin'
-                        ? 'bg-blue-950/30 border-blue-800/50 text-blue-100'
-                        : 'bg-slate-800/60 border-slate-700/60 text-slate-200'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between text-xs mb-1.5 opacity-80">
-                      <div className="flex items-center space-x-2">
-                        <strong className="text-white">{rep.author_name}</strong>
-                        <span className="px-1.5 py-0.5 rounded text-[10px] uppercase font-mono bg-slate-900/80 border border-slate-700">
-                          {rep.author_role}
-                        </span>
-                        {rep.is_internal && (
-                          <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40">
-                            🔒 INTERNAL NOTE (Hidden from Customer)
+                {ticket.replies.map((rep, idx) => {
+                  const isCallLog = rep.message?.includes('📞 Direct Audio Call');
+                  return (
+                    <div
+                      key={rep.id || idx}
+                      className={`p-4 rounded-2xl border ${
+                        isCallLog
+                          ? 'bg-emerald-950/40 border-emerald-700/80 text-emerald-100 ring-1 ring-emerald-500/30'
+                          : rep.is_internal
+                          ? 'bg-amber-950/30 border-amber-800/50 text-amber-100'
+                          : rep.author_role === 'agent' || rep.author_role === 'admin'
+                          ? 'bg-blue-950/30 border-blue-800/50 text-blue-100'
+                          : 'bg-slate-800/60 border-slate-700/60 text-slate-200'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between text-xs mb-1.5 opacity-80">
+                        <div className="flex items-center space-x-2">
+                          {isCallLog ? (
+                            <PhoneCall className="w-3.5 h-3.5 text-emerald-400" />
+                          ) : null}
+                          <strong className="text-white">{rep.author_name}</strong>
+                          <span className="px-1.5 py-0.5 rounded text-[10px] uppercase font-mono bg-slate-900/80 border border-slate-700">
+                            {isCallLog ? 'Audio Call' : rep.author_role}
                           </span>
-                        )}
+                          {rep.is_internal && (
+                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40">
+                              🔒 INTERNAL NOTE (Hidden from Customer)
+                            </span>
+                          )}
+                        </div>
+                        <span className="font-mono text-[11px] text-slate-400">
+                          {new Date(rep.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </span>
                       </div>
-                      <span className="font-mono text-[11px] text-slate-400">
-                        {new Date(rep.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                      </span>
+                      <p className="text-sm whitespace-pre-wrap leading-relaxed mt-1">
+                        {rep.message}
+                      </p>
+
+                      {/* Reply Attachments */}
+                      {rep.attachments && rep.attachments.length > 0 && (
+                        <div className="mt-2.5 pt-2 border-t border-slate-700/40 flex flex-wrap gap-2">
+                          {rep.attachments.map((file, fi) => (
+                            <div
+                              key={fi}
+                              onClick={() => file.type?.startsWith('image/') && setPreviewImage(file.data)}
+                              className={`p-1.5 rounded-lg border border-slate-700 bg-slate-900 flex items-center space-x-2 text-xs ${
+                                file.type?.startsWith('image/') ? 'cursor-pointer hover:border-blue-400' : ''
+                              }`}
+                            >
+                              {file.type?.startsWith('image/') ? (
+                                <img src={file.data} alt={file.name} className="w-7 h-7 rounded object-cover" />
+                              ) : (
+                                <FileText className="w-4 h-4 text-slate-400" />
+                              )}
+                              <span className="text-[11px] font-medium text-slate-200 max-w-[120px] truncate">{file.name}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
-                    <p className="text-sm whitespace-pre-wrap leading-relaxed mt-1">
-                      {rep.message}
-                    </p>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             ) : (
               <div className="py-6 text-center text-xs text-slate-500">
@@ -422,16 +610,50 @@ export default function AgentTicketDetailPage() {
                 className={`w-full rounded-xl bg-slate-950 border text-slate-100 text-sm p-3.5 focus:outline-none transition-colors ${
                   isInternal ? 'border-amber-700/60 focus:border-amber-500' : 'border-slate-800 focus:border-blue-500'
                 }`}
-                required
               />
 
+              {/* Reply attachments preview */}
+              {replyAttachments.length > 0 && (
+                <div className="mt-2.5 flex flex-wrap gap-2 p-2 bg-slate-950/80 rounded-xl border border-slate-800">
+                  {replyAttachments.map((f, i) => (
+                    <div key={i} className="flex items-center space-x-1.5 bg-slate-900 px-2.5 py-1 rounded-lg border border-slate-700 text-xs">
+                      <span className="text-slate-300 truncate max-w-[140px]">{f.name}</span>
+                      <button
+                        type="button"
+                        onClick={() => removeReplyAttachment(i)}
+                        className="text-slate-400 hover:text-red-400"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
               <div className="flex items-center justify-between mt-3">
-                <span className="text-[11px] text-slate-500">
-                  {isInternal ? '⚠️ Only agents and admins will see this note.' : 'Public message sent directly to customer portal.'}
-                </span>
+                <div className="flex items-center space-x-3">
+                  <label
+                    htmlFor="agent-file-upload"
+                    className="cursor-pointer inline-flex items-center space-x-1.5 text-xs text-slate-400 hover:text-blue-400 transition-colors"
+                  >
+                    <Paperclip className="w-3.5 h-3.5" />
+                    <span>Attach Files ({replyAttachments.length}/4)</span>
+                  </label>
+                  <input
+                    id="agent-file-upload"
+                    type="file"
+                    multiple
+                    accept="image/*,.pdf,.txt,.log,.json"
+                    onChange={handleFileUpload}
+                    className="hidden"
+                  />
+                  <span className="text-[11px] text-slate-500">
+                    {isInternal ? '⚠️ Only agents and admins will see this note.' : 'Public message sent directly to customer portal.'}
+                  </span>
+                </div>
                 <button
                   type="submit"
-                  disabled={sendingReply || !replyText.trim()}
+                  disabled={sendingReply || (!replyText.trim() && replyAttachments.length === 0)}
                   className={`px-4 py-2 rounded-xl text-xs font-semibold text-white transition-all disabled:opacity-50 ${
                     isInternal
                       ? 'bg-amber-600 hover:bg-amber-500 shadow-md shadow-amber-600/30'
@@ -658,6 +880,35 @@ export default function AgentTicketDetailPage() {
                 </div>
               ))}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Voice Call Modal (Feature 2) */}
+      <VoiceCallModal
+        isOpen={showCallModal}
+        onClose={() => setShowCallModal(false)}
+        ticketId={ticket.id}
+        partyName={ticket.customer_name}
+        partyPhone={ticket.customer_phone}
+        isAgentCalling={true}
+        onCallLogged={loadTicket}
+      />
+
+      {/* Image Preview Modal (Feature 1) */}
+      {previewImage && (
+        <div
+          className="fixed inset-0 z-50 bg-black/85 flex items-center justify-center p-4 backdrop-blur-sm"
+          onClick={() => setPreviewImage(null)}
+        >
+          <div className="relative max-w-4xl max-h-[90vh]">
+            <img src={previewImage} alt="Attachment Preview" className="max-w-full max-h-[85vh] rounded-2xl object-contain shadow-2xl border border-slate-700" />
+            <button
+              onClick={() => setPreviewImage(null)}
+              className="absolute top-3 right-3 p-2 rounded-full bg-slate-900/80 text-white hover:bg-slate-800 transition-colors border border-slate-700"
+            >
+              <X className="w-5 h-5" />
+            </button>
           </div>
         </div>
       )}

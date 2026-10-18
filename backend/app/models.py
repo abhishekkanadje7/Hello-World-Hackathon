@@ -39,10 +39,19 @@ class TicketCreateCustomerRequest(BaseModel):
     description: str
     category: Optional[str] = "Technical"
     channel: Optional[str] = "web"
+    attachments: Optional[List[Dict[str, Any]]] = None
+    allow_call: Optional[bool] = False
+    customer_phone: Optional[str] = None
+    customer_priority: Optional[str] = "Normal"
 
 class TicketReplyRequest(BaseModel):
     message: str
     is_internal: bool = False
+    attachments: Optional[List[Dict[str, Any]]] = None
+
+class TicketCallRequest(BaseModel):
+    duration_seconds: int = 0
+    call_status: Optional[str] = "Completed"
 
 class TicketReplyResponse(BaseModel):
     id: str
@@ -53,6 +62,7 @@ class TicketReplyResponse(BaseModel):
     message: str
     is_internal: bool = False
     created_at: str
+    attachments: Optional[List[Dict[str, Any]]] = None
 
 class ExplainabilityItem(BaseModel):
     factor: str
@@ -95,6 +105,12 @@ class TicketResponse(BaseModel):
     resolution_note: Optional[str] = None
     resolved_at: Optional[str] = None
     sla_due_at: str
+    attachments: Optional[List[Dict[str, Any]]] = None
+    allow_call: Optional[bool] = False
+    customer_phone: Optional[str] = None
+    customer_priority: Optional[str] = "Normal"
+    historical_match: Optional[Dict[str, Any]] = None
+    notification_sent: Optional[Dict[str, Any]] = None
     replies: Optional[List[TicketReplyResponse]] = None
 
 class WeightsUpdateRequest(BaseModel):

@@ -21,8 +21,15 @@ import {
   HelpCircle,
   Smartphone,
   Phone,
+  PhoneCall,
   RefreshCw,
-  Clock
+  Clock,
+  Paperclip,
+  Image as ImageIcon,
+  Trash2,
+  UploadCloud,
+  Flame,
+  Check
 } from 'lucide-react';
 
 export default function NewTicketPage() {
@@ -33,15 +40,51 @@ export default function NewTicketPage() {
   const [subject, setSubject] = useState('');
   const [category, setCategory] = useState('Technical Support');
   const [environment, setEnvironment] = useState('Web Application');
-  const [contactInfo, setContactInfo] = useState('');
+  const [customerPriority, setCustomerPriority] = useState('Normal');
+  const [allowCall, setAllowCall] = useState(false);
+  const [phoneNumber, setPhoneNumber] = useState('');
   const [description, setDescription] = useState('');
   const [errorDetails, setErrorDetails] = useState('');
+  const [attachments, setAttachments] = useState([]);
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
   const [result, setResult] = useState(null);
 
   const charCount = description.length;
+
+  const handleFileUpload = (e) => {
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
+    if (attachments.length + files.length > 5) {
+      alert('You can attach up to 5 files or screenshots per ticket.');
+      return;
+    }
+
+    files.forEach(file => {
+      if (file.size > 3 * 1024 * 1024) {
+        alert(`File "${file.name}" exceeds 3MB limit.`);
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = () => {
+        setAttachments(prev => [
+          ...prev,
+          {
+            name: file.name,
+            size: file.size,
+            type: file.type,
+            data: reader.result
+          }
+        ]);
+      };
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const removeAttachment = (index) => {
+    setAttachments(prev => prev.filter((_, i) => i !== index));
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -50,11 +93,11 @@ export default function NewTicketPage() {
     setSubmitting(true);
     setError(null);
 
-    // वर्णनात अतिरिक्त ग्राहक माहिती सुरक्षितपणे जोडणे
+    // वर्णनात अतिरिक्त संदर्भ जोडणे
     let fullDescription = description.trim();
     const extraMetadata = [];
     if (environment) extraMetadata.push(`Platform: ${environment}`);
-    if (contactInfo.trim()) extraMetadata.push(`Contact: ${contactInfo.trim()}`);
+    if (allowCall && phoneNumber.trim()) extraMetadata.push(`Direct Call Allowed: ${phoneNumber.trim()}`);
     if (errorDetails.trim()) extraMetadata.push(`Error/Log details: ${errorDetails.trim()}`);
 
     if (extraMetadata.length > 0) {
@@ -66,7 +109,11 @@ export default function NewTicketPage() {
         subject: subject.trim(),
         description: fullDescription,
         category: category,
-        channel: 'web'
+        channel: 'web',
+        attachments: attachments,
+        allow_call: allowCall,
+        customer_phone: phoneNumber.trim(),
+        customer_priority: customerPriority
       });
       setResult(ticket);
     } catch (err) {
@@ -104,7 +151,7 @@ export default function NewTicketPage() {
         </div>
       )}
 
-      {/* सबमिट झाल्यानंतरची पुष्टी (Customer Confirmation Screen - No AI scores exposed) */}
+      {/* सबमिट झाल्यानंतरची पुष्टी (Customer Confirmation Screen) */}
       {result ? (
         <div className="bg-white border border-slate-200 rounded-2xl p-6 sm:p-8 shadow-sm space-y-6 animate-fade-in text-center sm:text-left">
           <div className="flex flex-col sm:flex-row items-center space-y-3 sm:space-y-0 sm:space-x-4 border-b border-slate-100 pb-5">
@@ -116,12 +163,12 @@ export default function NewTicketPage() {
                 Ticket Submitted Successfully!
               </h2>
               <p className="text-xs text-slate-500 mt-0.5">
-                Your request has been safely received and logged in our system.
+                Your request has been safely received and logged into our queue.
               </p>
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 bg-slate-50 p-4 rounded-xl border border-slate-200 text-xs">
+          <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 bg-slate-50 p-4 rounded-xl border border-slate-200 text-xs">
             <div>
               <span className="text-slate-500 block">Ticket Reference</span>
               <span className="font-mono font-bold text-blue-600 text-sm">{result.ticket_number}</span>
@@ -131,6 +178,10 @@ export default function NewTicketPage() {
               <span className="font-semibold text-slate-800">{category}</span>
             </div>
             <div>
+              <span className="text-slate-500 block">Stated Urgency</span>
+              <span className="font-semibold text-slate-800">{customerPriority}</span>
+            </div>
+            <div>
               <span className="text-slate-500 block">Status</span>
               <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-bold bg-blue-100 text-blue-700 border border-blue-200">
                 {result.status || 'Open'}
@@ -138,12 +189,33 @@ export default function NewTicketPage() {
             </div>
           </div>
 
+          {result.historical_match && (
+            <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-800 space-y-1">
+              <div className="font-bold flex items-center space-x-1.5 text-emerald-900">
+                <span>🔍 Instant Duplicate / Similar Question Match Found!</span>
+              </div>
+              <p>
+                Our AI identified that a previous inquiry (<strong>{result.historical_match.matched_ticket_number}</strong>) had a verified answer:
+              </p>
+              <div className="p-2.5 bg-white rounded-lg border border-emerald-200 text-slate-800 font-mono text-[11px]">
+                {result.historical_match.resolution_note}
+              </div>
+            </div>
+          )}
+
+          {attachments.length > 0 && (
+            <div className="text-xs text-slate-600 flex items-center space-x-2">
+              <Paperclip className="w-4 h-4 text-slate-400" />
+              <span>{attachments.length} attachment(s) uploaded and safely attached to ticket record.</span>
+            </div>
+          )}
+
           <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-600 space-y-2">
             <p className="font-medium text-slate-800">
               What happens next?
             </p>
             <p className="leading-relaxed">
-              Our support team has been notified. An agent will review your issue and post updates directly to your ticket thread. You can view the live status and reply anytime.
+              Our support team has been notified. When an agent resolves your complaint, you will automatically receive an <strong>Email & SMS alert</strong> at your registered contact details.
             </p>
           </div>
 
@@ -154,7 +226,8 @@ export default function NewTicketPage() {
                 setSubject('');
                 setDescription('');
                 setErrorDetails('');
-                setContactInfo('');
+                setPhoneNumber('');
+                setAttachments([]);
               }}
               className="w-full sm:w-auto px-4 py-2.5 bg-white hover:bg-slate-50 text-slate-700 rounded-lg text-xs font-semibold border border-slate-300 transition-colors"
             >
@@ -164,13 +237,13 @@ export default function NewTicketPage() {
               to={`/customer/tickets/${result.id}`}
               className="w-full sm:w-auto px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold shadow-sm transition-all flex items-center justify-center space-x-1.5"
             >
-              <span>View Ticket Conversation</span>
+              <span>View Ticket Conversation & Live Chat</span>
               <ArrowRight className="w-4 h-4" />
             </Link>
           </div>
         </div>
       ) : (
-        /* मुख्य तिकीट निर्मिती फॉर्म (Full Support Ticket Form) */
+        /* मुख्य तिकीट निर्मिती फॉर्म */
         <form onSubmit={handleSubmit} className="bg-white border border-slate-200 rounded-2xl p-6 sm:p-8 shadow-sm space-y-6">
           {/* १. Subject */}
           <div>
@@ -180,7 +253,7 @@ export default function NewTicketPage() {
             <input
               type="text"
               required
-              placeholder="e.g., Unable to process credit card payment or invoice question"
+              placeholder="e.g., Unable to process checkout payment or subscription inquiry"
               value={subject}
               onChange={(e) => setSubject(e.target.value)}
               className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-lg text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 transition-all"
@@ -225,21 +298,79 @@ export default function NewTicketPage() {
             </div>
           </div>
 
-          {/* ३. Alternative Contact (Optional) */}
-          <div>
-            <label className="text-xs font-semibold text-slate-700 block mb-1.5">
-              Contact Phone or Callback <span className="text-slate-400 font-normal">(Optional)</span>
-            </label>
-            <input
-              type="text"
-              placeholder="e.g. +91 98765 43210"
-              value={contactInfo}
-              onChange={(e) => setContactInfo(e.target.value)}
-              className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-lg text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 transition-all"
-            />
+          {/* ३. Customer Stated Priority (Feature 3) */}
+          <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-2">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-bold text-slate-800 flex items-center space-x-1.5">
+                <Flame className="w-4 h-4 text-amber-500" />
+                <span>Customer Perceived Urgency & Impact</span>
+              </label>
+              <span className="text-[11px] text-slate-500">Your stated business impact</span>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">
+              {[
+                { key: 'Low', label: 'Low', desc: 'Informational question' },
+                { key: 'Normal', label: 'Normal', desc: 'Standard business inquiry' },
+                { key: 'High', label: 'High', desc: 'Impacting my work/team' },
+                { key: 'Urgent', label: 'Urgent', desc: 'Critical operational blocker' }
+              ].map(opt => (
+                <button
+                  type="button"
+                  key={opt.key}
+                  onClick={() => setCustomerPriority(opt.key)}
+                  className={`p-2.5 rounded-lg border text-left transition-all ${
+                    customerPriority === opt.key
+                      ? 'border-blue-600 bg-blue-50/70 text-blue-900 ring-2 ring-blue-500/20'
+                      : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold">{opt.label}</span>
+                    {customerPriority === opt.key && <Check className="w-3.5 h-3.5 text-blue-600" />}
+                  </div>
+                  <span className="text-[10px] text-slate-500 block mt-0.5 leading-tight">{opt.desc}</span>
+                </button>
+              ))}
+            </div>
           </div>
 
-          {/* ४. Detailed Description */}
+          {/* ४. Direct Audio Calling Option (Feature 2) */}
+          <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-3">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-bold text-slate-800 flex items-center space-x-1.5 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={allowCall}
+                  onChange={(e) => setAllowCall(e.target.checked)}
+                  className="w-4 h-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500 cursor-pointer"
+                />
+                <PhoneCall className="w-4 h-4 text-emerald-600" />
+                <span>Allow Support Specialist to Call Me Directly</span>
+              </label>
+              <span className="text-[11px] text-slate-500">In-Browser Voice & Phone</span>
+            </div>
+
+            {allowCall && (
+              <div className="space-y-1.5 pt-1 animate-fade-in">
+                <label className="text-[11px] font-semibold text-slate-700 block">
+                  Callback Phone Number <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  required={allowCall}
+                  placeholder="+91 98765 43210"
+                  value={phoneNumber}
+                  onChange={(e) => setPhoneNumber(e.target.value)}
+                  className="w-full px-3.5 py-2 bg-white border border-slate-300 rounded-lg text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 font-mono"
+                />
+                <p className="text-[10px] text-slate-400">
+                  Our assigned agent can initiate an instant in-browser call or direct audio session regarding this ticket.
+                </p>
+              </div>
+            )}
+          </div>
+
+          {/* ५. Detailed Description */}
           <div>
             <div className="flex justify-between items-center mb-1.5">
               <label className="text-xs font-semibold text-slate-700">
@@ -259,7 +390,60 @@ export default function NewTicketPage() {
             />
           </div>
 
-          {/* ५. Error message or code snippet (Optional) */}
+          {/* ६. Attachments & Images Upload (Feature 1) */}
+          <div className="space-y-2">
+            <label className="text-xs font-semibold text-slate-700 block">
+              Attach Images, Screenshots or Log Files <span className="text-slate-400 font-normal">(Optional, max 3MB each)</span>
+            </label>
+            <div className="border-2 border-dashed border-slate-300 rounded-xl p-4 text-center hover:border-blue-400 transition-colors bg-slate-50/50">
+              <input
+                type="file"
+                id="file-upload"
+                multiple
+                accept="image/*,.pdf,.txt,.log,.json"
+                onChange={handleFileUpload}
+                className="hidden"
+              />
+              <label htmlFor="file-upload" className="cursor-pointer flex flex-col items-center justify-center space-y-1.5">
+                <UploadCloud className="w-6 h-6 text-slate-400" />
+                <span className="text-xs font-semibold text-blue-600 hover:text-blue-700">
+                  Click to upload files or drag and drop
+                </span>
+                <span className="text-[10px] text-slate-400">
+                  PNG, JPG, PDF, TXT, LOG up to 3MB (Max 5 files)
+                </span>
+              </label>
+            </div>
+
+            {attachments.length > 0 && (
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 pt-2">
+                {attachments.map((file, idx) => (
+                  <div key={idx} className="p-2 bg-slate-100 rounded-lg border border-slate-200 flex items-center justify-between text-xs space-x-2">
+                    <div className="flex items-center space-x-2 truncate">
+                      {file.type.startsWith('image/') ? (
+                        <img src={file.data} alt="preview" className="w-8 h-8 rounded object-cover flex-shrink-0 border border-slate-300" />
+                      ) : (
+                        <FileText className="w-5 h-5 text-slate-500 flex-shrink-0" />
+                      )}
+                      <div className="truncate">
+                        <span className="font-medium text-slate-800 block truncate text-[11px]">{file.name}</span>
+                        <span className="text-[9px] text-slate-400 font-mono">{(file.size / 1024).toFixed(1)} KB</span>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => removeAttachment(idx)}
+                      className="text-slate-400 hover:text-red-600 p-1 rounded"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* ७. Error message or code snippet (Optional) */}
           <div>
             <label className="text-xs font-semibold text-slate-700 block mb-1.5">
               Error Message, URL or Code Snippet <span className="text-slate-400 font-normal">(Optional)</span>

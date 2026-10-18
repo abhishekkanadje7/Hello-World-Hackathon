@@ -255,6 +255,25 @@ def init_db():
         cursor.execute("ALTER TABLE tickets ADD COLUMN csat_feedback TEXT")
     except Exception:
         pass
+
+    # Ensure attachments, calling, priority, historical match & notification columns exist
+    for col, col_type in [
+        ("attachments_json", "TEXT"),
+        ("allow_call", "INTEGER DEFAULT 0"),
+        ("customer_phone", "TEXT"),
+        ("customer_priority", "TEXT DEFAULT 'Normal'"),
+        ("historical_match_json", "TEXT"),
+        ("notification_sent_json", "TEXT")
+    ]:
+        try:
+            cursor.execute(f"ALTER TABLE tickets ADD COLUMN {col} {col_type}")
+        except Exception:
+            pass
+
+    try:
+        cursor.execute("ALTER TABLE ticket_replies ADD COLUMN attachments_json TEXT")
+    except Exception:
+        pass
     
     conn.commit()
     seed_users_and_tickets(conn)
@@ -416,14 +435,21 @@ def get_tickets_for_user(current_user: Dict[str, Any]) -> List[Dict[str, Any]]:
         cursor.execute("SELECT * FROM tickets ORDER BY priority_score DESC, created_at DESC")
         
     rows = cursor.fetchall()
-    results = []
-    for r in rows:
-        item = dict(r)
-        item["explainability"] = json.loads(item["explainability_json"]) if item.get("explainability_json") else {}
-        item["kb_auto_reply"] = json.loads(item["kb_auto_reply_json"]) if item.get("kb_auto_reply_json") else None
-        results.append(item)
+    results = [_format_ticket_row(r) for r in rows]
     conn.close()
     return results
+
+def _format_ticket_row(r) -> Dict[str, Any]:
+    item = dict(r)
+    item["explainability"] = json.loads(item["explainability_json"]) if item.get("explainability_json") else {}
+    item["kb_auto_reply"] = json.loads(item["kb_auto_reply_json"]) if item.get("kb_auto_reply_json") else None
+    item["attachments"] = json.loads(item["attachments_json"]) if item.get("attachments_json") else []
+    item["historical_match"] = json.loads(item["historical_match_json"]) if item.get("historical_match_json") else None
+    item["notification_sent"] = json.loads(item["notification_sent_json"]) if item.get("notification_sent_json") else None
+    item["allow_call"] = bool(item.get("allow_call"))
+    item["customer_phone"] = item.get("customer_phone") or ""
+    item["customer_priority"] = item.get("customer_priority") or "Normal"
+    return item
 
 def get_ticket_by_id(ticket_id: str) -> Optional[Dict[str, Any]]:
     conn = get_connection()
@@ -432,10 +458,7 @@ def get_ticket_by_id(ticket_id: str) -> Optional[Dict[str, Any]]:
     r = cursor.fetchone()
     conn.close()
     if r:
-        item = dict(r)
-        item["explainability"] = json.loads(item["explainability_json"]) if item.get("explainability_json") else {}
-        item["kb_auto_reply"] = json.loads(item["kb_auto_reply_json"]) if item.get("kb_auto_reply_json") else None
-        return item
+        return _format_ticket_row(r)
     return None
 
 def insert_ticket(ticket_data: Dict[str, Any]) -> Dict[str, Any]:
@@ -448,8 +471,10 @@ def insert_ticket(ticket_data: Dict[str, Any]) -> Dict[str, Any]:
         created_at, status, priority_score, assigned_tier,
         assigned_agent_id, assigned_agent_name, routing_reason,
         explainability_json, kb_auto_reply_json, resolution_note,
-        resolved_at, sla_due_at, csat_rating, csat_feedback
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        resolved_at, sla_due_at, csat_rating, csat_feedback,
+        attachments_json, allow_call, customer_phone, customer_priority,
+        historical_match_json, notification_sent_json
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (
         ticket_data["id"],
         ticket_data["ticket_number"],
@@ -474,7 +499,13 @@ def insert_ticket(ticket_data: Dict[str, Any]) -> Dict[str, Any]:
         ticket_data.get("resolved_at"),
         ticket_data["sla_due_at"],
         ticket_data.get("csat_rating"),
-        ticket_data.get("csat_feedback")
+        ticket_data.get("csat_feedback"),
+        json.dumps(ticket_data.get("attachments")) if ticket_data.get("attachments") else None,
+        1 if ticket_data.get("allow_call") else 0,
+        ticket_data.get("customer_phone"),
+        ticket_data.get("customer_priority", "Normal"),
+        json.dumps(ticket_data.get("historical_match")) if ticket_data.get("historical_match") else None,
+        json.dumps(ticket_data.get("notification_sent")) if ticket_data.get("notification_sent") else None
     ))
     
     # Audit log
@@ -510,13 +541,20 @@ def get_replies_for_ticket(ticket_id: str, is_customer: bool = False) -> List[Di
         """, (ticket_id,))
     rows = cursor.fetchall()
     conn.close()
-    return [dict(r) for r in rows]
+    results = []
+    for r in rows:
+        item = dict(r)
+        item["attachments"] = json.loads(item["attachments_json"]) if item.get("attachments_json") else []
+        results.append(item)
+    return results
 
 def insert_ticket_reply(reply_data: Dict[str, Any]) -> Dict[str, Any]:
     conn = get_connection()
     cursor = conn.cursor()
+    att_json = json.dumps(reply_data.get("attachments")) if reply_data.get("attachments") else None
     cursor.execute("""
-    INSERT INTO ticket_replies VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO ticket_replies (id, ticket_id, author_id, author_name, author_role, message, is_internal, created_at, attachments_json)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (
         reply_data["id"],
         reply_data["ticket_id"],
@@ -525,7 +563,8 @@ def insert_ticket_reply(reply_data: Dict[str, Any]) -> Dict[str, Any]:
         reply_data["author_role"],
         reply_data["message"],
         1 if reply_data.get("is_internal") else 0,
-        reply_data["created_at"]
+        reply_data["created_at"],
+        att_json
     ))
     
     cursor.execute("""
@@ -543,11 +582,12 @@ def insert_ticket_reply(reply_data: Dict[str, Any]) -> Dict[str, Any]:
     conn.close()
     return reply_data
 
-def update_ticket_status(ticket_id: str, status: str, assigned_agent_id: Optional[str] = None, assigned_agent_name: Optional[str] = None, note: Optional[str] = None) -> Optional[Dict[str, Any]]:
+def update_ticket_status(ticket_id: str, status: str, assigned_agent_id: Optional[str] = None, assigned_agent_name: Optional[str] = None, note: Optional[str] = None, notification_sent: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
     conn = get_connection()
     cursor = conn.cursor()
     now_iso = datetime.utcnow().isoformat() + "Z"
     resolved_at = now_iso if status == "Resolved" else None
+    notif_json = json.dumps(notification_sent) if notification_sent else None
     
     cursor.execute("""
     UPDATE tickets
@@ -555,9 +595,87 @@ def update_ticket_status(ticket_id: str, status: str, assigned_agent_id: Optiona
         assigned_agent_id = COALESCE(?, assigned_agent_id),
         assigned_agent_name = COALESCE(?, assigned_agent_name),
         resolution_note = COALESCE(?, resolution_note),
-        resolved_at = CASE WHEN ? = 'Resolved' THEN ? ELSE resolved_at END
+        resolved_at = CASE WHEN ? = 'Resolved' THEN ? ELSE resolved_at END,
+        notification_sent_json = COALESCE(?, notification_sent_json)
     WHERE id = ?
-    """, (status, assigned_agent_id, assigned_agent_name, note, status, resolved_at, ticket_id))
+    """, (status, assigned_agent_id, assigned_agent_name, note, status, resolved_at, notif_json, ticket_id))
+    
+    cursor.execute("""
+    INSERT INTO audit_logs (ticket_id, action, details, performed_by, timestamp)
+    VALUES (?, ?, ?, ?, ?)
+    """, (
+        ticket_id,
+        "STATUS_UPDATED",
+        f"Status changed to {status}. Assigned: {assigned_agent_name}. Note: {note}",
+        assigned_agent_name or "System",
+        now_iso
+    ))
+    
+    conn.commit()
+    conn.close()
+    return get_ticket_by_id(ticket_id)
+
+def get_resolved_tickets_for_matching() -> List[Dict[str, Any]]:
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+    SELECT id, ticket_number, subject, description, resolution_note, resolved_at 
+    FROM tickets 
+    WHERE status = 'Resolved' AND resolution_note IS NOT NULL AND TRIM(resolution_note) != ''
+    ORDER BY resolved_at DESC LIMIT 50
+    """)
+    rows = cursor.fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+def log_ticket_call(ticket_id: str, caller_name: str, caller_role: str, duration_seconds: int, call_status: str = "Completed") -> Dict[str, Any]:
+    conn = get_connection()
+    cursor = conn.cursor()
+    now_iso = datetime.utcnow().isoformat() + "Z"
+    
+    cursor.execute("""
+    INSERT INTO audit_logs (ticket_id, action, details, performed_by, timestamp)
+    VALUES (?, ?, ?, ?, ?)
+    """, (
+        ticket_id,
+        "VOICE_CALL_LOGGED",
+        f"Direct Audio Call ({duration_seconds}s, Status: {call_status}) with {caller_role} {caller_name}",
+        caller_name,
+        now_iso
+    ))
+    
+    mins = duration_seconds // 60
+    secs = duration_seconds % 60
+    call_msg = f"📞 Direct Audio Call ({call_status}) - Duration: {mins}m {secs:02d}s. Completed with {caller_name}."
+    reply_id = f"rep-{uuid.uuid4().hex[:8]}"
+    
+    try:
+        cursor.execute("""
+        INSERT INTO ticket_replies (id, ticket_id, author_id, author_name, author_role, message, is_internal, created_at, attachments_json)
+        VALUES (?, ?, ?, ?, ?, ?, 0, ?, NULL)
+        """, (
+            reply_id,
+            ticket_id,
+            None,
+            caller_name,
+            "system",
+            call_msg,
+            now_iso
+        ))
+    except Exception:
+        pass
+        
+    conn.commit()
+    conn.close()
+    return {
+        "id": reply_id,
+        "ticket_id": ticket_id,
+        "caller_name": caller_name,
+        "caller_role": caller_role,
+        "duration_seconds": duration_seconds,
+        "call_status": call_status,
+        "timestamp": now_iso
+    }
     
     cursor.execute("""
     INSERT INTO audit_logs (ticket_id, action, details, performed_by, timestamp)

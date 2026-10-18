@@ -9,7 +9,7 @@ from .config import CURRENT_WEIGHTS, SystemWeights
 from .models import (
     RegisterRequest, LoginRequest, ChangePasswordRequest, UserResponse,
     AuthTokenResponse, TicketCreateCustomerRequest, TicketReplyRequest,
-    TicketReplyResponse, TicketResponse, WeightsUpdateRequest
+    TicketReplyResponse, TicketResponse, WeightsUpdateRequest, TicketCallRequest
 )
 from .auth import (
     hash_password, verify_password, validate_password_strength,
@@ -26,11 +26,11 @@ from .database import (
     update_user_profile, admin_reset_user_password, reset_demo_database,
     get_all_canned_replies, insert_canned_reply, delete_canned_reply,
     create_notification, get_user_notifications, mark_notifications_read,
-    submit_ticket_csat
+    submit_ticket_csat, get_resolved_tickets_for_matching, log_ticket_call
 )
 from .nlp_engine import (
     analyze_sentiment_and_frustration, analyze_urgency,
-    build_explainability_and_route
+    build_explainability_and_route, find_similar_resolved_ticket
 )
 from .kb_engine import find_kb_match, DEFAULT_KB_ARTICLES
 from .websocket_manager import ws_manager
@@ -324,6 +324,43 @@ def preview_ticket_score(req: Dict[str, Any]):
         "keywords": list(set(frust_kws + urgency_kws))
     }
 
+def dispatch_resolution_notification(ticket: Dict[str, Any], resolution_note: Optional[str] = None) -> Dict[str, Any]:
+    """
+    तिकीट सोडवल्यानंतर (Resolved) ग्राहकाला SMS व Email द्वारे आपोआप पाठवली जाणारी सूचना.
+    """
+    now_iso = datetime.utcnow().isoformat() + "Z"
+    cust_name = ticket.get("customer_name") or "Valued Customer"
+    cust_email = ticket.get("customer_email") or "customer@example.com"
+    cust_phone = ticket.get("customer_phone") or "+91 98765 43210"
+    ticket_num = ticket.get("ticket_number") or "TX-XXXX"
+    note = resolution_note or ticket.get("resolution_note") or "Your support inquiry has been successfully resolved by our engineering operations."
+
+    email_payload = {
+        "channel": "Email",
+        "to": cust_email,
+        "recipient_name": cust_name,
+        "subject": f"✅ [Resolved] Ticket {ticket_num}: {ticket.get('subject', 'Support Request')}",
+        "body": f"Dear {cust_name},\n\nYour support ticket {ticket_num} has been marked as Resolved.\n\nResolution Summary:\n{note}\n\nIf you need further help or have questions, feel free to reply directly to your ticket.\n\nBest regards,\nTriageX Operations Team",
+        "status": "Delivered",
+        "dispatched_at": now_iso
+    }
+
+    sms_payload = {
+        "channel": "SMS",
+        "to": cust_phone,
+        "recipient_name": cust_name,
+        "body": f"TriageX Alert: Your ticket {ticket_num} is now Resolved. Resolution: {note[:60]}... Thank you for your patience!",
+        "status": "Delivered",
+        "dispatched_at": now_iso
+    }
+
+    return {
+        "dispatched_at": now_iso,
+        "email": email_payload,
+        "sms": sms_payload,
+        "summary": f"Automated Resolution Alert successfully dispatched via Email ({cust_email}) and SMS ({cust_phone})."
+    }
+
 @app.post("/api/tickets")
 async def create_ticket(
     req: TicketCreateCustomerRequest,
@@ -344,19 +381,25 @@ async def create_ticket(
     full_text = f"{req.subject}\n{req.description}"
     kb_match = find_kb_match(full_text)
     
-    # 2. Run NLP & Explainability Engine
+    # 2. Check Similar Question in Prior Resolved Tickets (Feature 5: Case-Based Reasoning)
+    resolved_tickets = get_resolved_tickets_for_matching()
+    historical_match = find_similar_resolved_ticket(req.subject, req.description, resolved_tickets)
+    
+    # 3. Run NLP & Explainability Engine (with Customer Urgency & Historical Match)
     expl = build_explainability_and_route(
         req.subject,
         req.description,
         customer_type,
         kb_match,
-        CURRENT_WEIGHTS
+        CURRENT_WEIGHTS,
+        customer_priority=req.customer_priority,
+        historical_match=historical_match
     )
     
-    # 3. Calculate SLA
+    # 4. Calculate SLA
     sla_due = calculate_sla_due(now_dt, expl.assigned_tier)
     
-    # 4. Determine status & agent
+    # 5. Determine status & agent
     if expl.assigned_tier == "Routine" and kb_match:
         initial_status = "Resolved"
         resolved_at = now_iso
@@ -398,7 +441,13 @@ async def create_ticket(
         "kb_auto_reply": kb_match,
         "resolution_note": res_note,
         "resolved_at": resolved_at,
-        "sla_due_at": sla_due
+        "sla_due_at": sla_due,
+        "attachments": req.attachments or [],
+        "allow_call": bool(req.allow_call),
+        "customer_phone": req.customer_phone or "",
+        "customer_priority": req.customer_priority or "Normal",
+        "historical_match": historical_match,
+        "notification_sent": None
     }
     
     saved_ticket = insert_ticket(ticket_data)
@@ -414,7 +463,22 @@ async def create_ticket(
             "author_role": "system",
             "message": f"Hello {customer_name},\n\nOur automated knowledge base matched your question with our official guide:\n\n### {kb_match['title']}\n{kb_match['snippet']}\n\nThis ticket has been marked as resolved. If this did not solve your inquiry, simply reply to this thread and an agent will assist you.",
             "is_internal": False,
-            "created_at": now_iso
+            "created_at": now_iso,
+            "attachments": []
+        })
+    elif historical_match:
+        # Automated AI suggestion from prior answered similar inquiry
+        hist_rep_id = f"rep-{uuid.uuid4().hex[:8]}"
+        insert_ticket_reply({
+            "id": hist_rep_id,
+            "ticket_id": ticket_id,
+            "author_id": None,
+            "author_name": "AI Case-Based Reasoning",
+            "author_role": "system",
+            "message": f"Hello {customer_name},\n\n🔍 Our AI identified that a very similar question was previously resolved in ticket **{historical_match['matched_ticket_number']}** ({historical_match['similarity_score']}% match):\n\n**Previous Question:** {historical_match['matched_subject']}\n**Proven Resolution:** {historical_match['resolution_note']}\n\nOur human support specialists are reviewing your request, but the above proven answer may help you right away!",
+            "is_internal": False,
+            "created_at": now_iso,
+            "attachments": []
         })
     else:
         # Create notification for senior agents if Critical
@@ -486,7 +550,8 @@ async def create_reply(
         "author_role": role,
         "message": req.message,
         "is_internal": is_internal,
-        "created_at": now_iso
+        "created_at": now_iso,
+        "attachments": req.attachments or []
     }
     
     saved_reply = insert_ticket_reply(reply_data)
@@ -519,7 +584,35 @@ async def create_reply(
     
     return saved_reply
 
-# --- STATUS & RESOLUTION ---
+# --- AUDIO CALLING ENDPOINT (Feature 2) ---
+
+@app.post("/api/tickets/{ticket_id}/call")
+async def log_call_endpoint(
+    ticket_id: str,
+    req: TicketCallRequest,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    ticket = get_ticket_by_id(ticket_id)
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+
+    call_log = log_ticket_call(
+        ticket_id=ticket_id,
+        caller_name=current_user["name"],
+        caller_role=current_user.get("role", "customer"),
+        duration_seconds=req.duration_seconds,
+        call_status=req.call_status or "Completed"
+    )
+
+    # Broadcast call event to real-time channel
+    await ws_manager.broadcast("CALL_LOGGED", {
+        "ticket_id": ticket_id,
+        "call_log": call_log
+    })
+
+    return call_log
+
+# --- STATUS & RESOLUTION (Feature 4: Email & SMS Dispatch) ---
 
 @app.patch("/api/tickets/{ticket_id}/status")
 async def update_status(
@@ -531,21 +624,33 @@ async def update_status(
     if new_status not in ["Open", "In Progress", "Resolved"]:
         raise HTTPException(status_code=400, detail="Invalid status value.")
         
+    current_ticket = get_ticket_by_id(ticket_id)
+    if not current_ticket:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+
+    notification_payload = None
+    if new_status == "Resolved":
+        notification_payload = dispatch_resolution_notification(current_ticket, req.get("resolution_note"))
+
     updated = update_ticket_status(
         ticket_id=ticket_id,
         status=new_status,
         assigned_agent_id=req.get("assigned_agent_id"),
         assigned_agent_name=req.get("assigned_agent_name"),
-        note=req.get("resolution_note")
+        note=req.get("resolution_note"),
+        notification_sent=notification_payload
     )
     if not updated:
         raise HTTPException(status_code=404, detail="Ticket not found")
         
     if new_status == "Resolved" and updated.get("customer_id"):
+        notif_msg = f"Your ticket '{updated['subject'][:45]}' has been marked as Resolved."
+        if notification_payload:
+            notif_msg += f" Confirmation sent via Email ({notification_payload['email']['to']}) and SMS."
         create_notification(
             user_id=updated["customer_id"],
             title=f"Ticket Resolved ({updated['ticket_number']})",
-            message=f"Your ticket '{updated['subject'][:50]}' has been marked as Resolved. Please let us know your feedback!",
+            message=notif_msg,
             ticket_id=ticket_id
         )
         

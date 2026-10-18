@@ -152,10 +152,17 @@ export async function fetchTicketReplies(ticketId) {
   return request(`/tickets/${ticketId}/replies`);
 }
 
-export async function sendTicketReply(ticketId, message, is_internal = false) {
+export async function sendTicketReply(ticketId, message, is_internal = false, attachments = []) {
   return request(`/tickets/${ticketId}/replies`, {
     method: 'POST',
-    body: JSON.stringify({ message, is_internal })
+    body: JSON.stringify({ message, is_internal, attachments })
+  });
+}
+
+export async function logTicketCall(ticketId, durationSeconds, callStatus = 'Completed') {
+  return request(`/tickets/${ticketId}/call`, {
+    method: 'POST',
+    body: JSON.stringify({ duration_seconds: durationSeconds, call_status: callStatus })
   });
 }
 

@@ -154,12 +154,76 @@ def perform_cognitive_analysis(text: str) -> Dict[str, Any]:
 # ३. फायनल Priority आणि राऊटिंग निर्णय (Master Route & Explainability)
 # =============================================================================
 
+def find_similar_resolved_ticket(subject: str, description: str, resolved_tickets: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """
+    पूर्वी सोडवलेल्या (Resolved) तिकीटांमधील समान प्रश्न शोधणे (Case-Based Reasoning).
+    जर नवा प्रश्न आधीच्या सोडवलेल्या प्रश्नासारखा असेल तर त्याचे आधीचे यशस्वी उत्तर थेट सुचवते.
+    """
+    if not resolved_tickets:
+        return None
+        
+    def extract_tokens(text: str) -> set:
+        words = re.findall(r"\b[a-zA-Z0-9_]{3,}\b", (text or "").lower())
+        stopwords = {
+            "the", "and", "for", "with", "this", "that", "from", "have", "been", 
+            "when", "what", "your", "help", "please", "issue", "problem", "ticket",
+            "support", "cannot", "could", "would", "about", "there", "their"
+        }
+        return set(w for w in words if w not in stopwords)
+        
+    curr_tokens = extract_tokens(f"{subject} {description}")
+    if not curr_tokens:
+        return None
+        
+    best_match = None
+    best_score = 0.0
+    
+    for prev in resolved_tickets:
+        prev_subj = prev.get("subject", "")
+        prev_desc = prev.get("description", "")
+        prev_res = prev.get("resolution_note", "")
+        if not prev_res or len(prev_res.strip()) < 5:
+            continue
+            
+        prev_tokens = extract_tokens(f"{prev_subj} {prev_desc}")
+        if not prev_tokens:
+            continue
+            
+        intersection = curr_tokens.intersection(prev_tokens)
+        union = curr_tokens.union(prev_tokens)
+        jaccard = len(intersection) / len(union) if union else 0.0
+        
+        # Subject matching gets enhanced weight
+        subj_tokens = extract_tokens(prev_subj)
+        subj_inter = extract_tokens(subject).intersection(subj_tokens)
+        subj_overlap = len(subj_inter) / max(1, len(subj_tokens)) if subj_tokens else 0.0
+        
+        combined_similarity = (jaccard * 0.55) + (subj_overlap * 0.45)
+        
+        if combined_similarity > best_score:
+            best_score = combined_similarity
+            best_match = {
+                "matched_ticket_id": prev.get("id"),
+                "matched_ticket_number": prev.get("ticket_number"),
+                "matched_subject": prev_subj,
+                "resolution_note": prev_res,
+                "similarity_score": round(best_score * 100, 1),
+                "matched_keywords": list(intersection)[:6]
+            }
+            
+    # Require at least 32% match or 2+ shared core tokens
+    if best_match and (best_match["similarity_score"] >= 32.0 or len(best_match["matched_keywords"]) >= 2):
+        return best_match
+    return None
+
 def build_explainability_and_route(
     subject: str,
     description: str,
     customer_type: str,
     kb_match: Optional[Dict[str, Any]] = None,
-    weights = CURRENT_WEIGHTS
+    weights = CURRENT_WEIGHTS,
+    customer_priority: Optional[str] = "Normal",
+    historical_match: Optional[Dict[str, Any]] = None
 ) -> ExplainabilityBreakdown:
     # पायरी १: जर Google Gemini API उपलब्ध असेल तर थेट LLM कडे पाठवणे
     try:
@@ -201,6 +265,8 @@ def build_explainability_and_route(
                 summary_text = f"⚡ Direct Gemini AI Decision: {r_reason}"
                 if suggested:
                     summary_text += f" | AI Suggested Solution: {suggested}"
+                if historical_match:
+                    summary_text += f" | 🔍 Historical Resolution matched from {historical_match['matched_ticket_number']}"
 
                 return ExplainabilityBreakdown(
                     total_priority_score=p_score,
@@ -215,6 +281,18 @@ def build_explainability_and_route(
     full_text = f"{subject}\n{description}"
     cog = perform_cognitive_analysis(full_text)
 
+    # Customer Stated Urgency Modifier (Feature 3: Priority given by customer)
+    cust_prio_clean = (customer_priority or "Normal").strip().capitalize()
+    prio_modifier = 0.0
+    if cust_prio_clean == "Low":
+        prio_modifier = -5.0
+    elif cust_prio_clean == "High":
+        prio_modifier = 12.0
+    elif cust_prio_clean == "Urgent":
+        prio_modifier = 22.0
+
+    adjusted_urgency = min(100.0, max(5.0, cog["urgency_score"] + prio_modifier))
+
     tier_clean = (customer_type or "Regular").lower()
     value_score = float(PLAN_VALUE_MAP.get(tier_clean, 20))
 
@@ -226,7 +304,7 @@ def build_explainability_and_route(
     w_u = weights.urgency_weight / total_w
     w_v = weights.customer_value_weight / total_w
 
-    calculated_score = (cog["urgency_score"] * w_u) + (cog["frustration_score"] * w_f) + (value_score * w_v)
+    calculated_score = (adjusted_urgency * w_u) + (cog["frustration_score"] * w_f) + (value_score * w_v)
     priority_score = int(round(min(100.0, max(0.0, calculated_score))))
 
     # Routing Tier Assignment
@@ -244,16 +322,16 @@ def build_explainability_and_route(
         routing_reason = f"Routine Priority ({priority_score}/100): Standard support resolution."
 
     f_contrib = round(cog["frustration_score"] * w_f, 1)
-    u_contrib = round(cog["urgency_score"] * w_u, 1)
+    u_contrib = round(adjusted_urgency * w_u, 1)
     v_contrib = round(value_score * w_v, 1)
 
     factors = [
         ExplainabilityItem(
             factor="Cognitive Semantic Understanding",
-            score=cog["urgency_score"],
+            score=adjusted_urgency,
             weight=round(w_u * 100, 1),
             contribution=u_contrib,
-            detail=f"Key Diagnosis: {cog['key_issue']} (Urgency: {cog['urgency_score']}/100)"
+            detail=f"Key Diagnosis: {cog['key_issue']} (Urgency: {adjusted_urgency}/100, Customer Stated: {cust_prio_clean})"
         ),
         ExplainabilityItem(
             factor="Sentiment & Emotional Distress",
@@ -271,15 +349,31 @@ def build_explainability_and_route(
         )
     ]
 
+    # जर ग्राहकाने विशिष्ट निकड नमूद केली असेल तर अतिरिक्त स्पष्टीकरण
+    if cust_prio_clean != "Normal":
+        factors.append(
+            ExplainabilityItem(
+                factor="Customer Stated Impact",
+                score=float(max(10, min(100, int(adjusted_urgency)))),
+                weight=15.0,
+                contribution=round(prio_modifier * 0.4, 1),
+                detail=f"Customer selected perceived priority level: '{cust_prio_clean}' (impact: {prio_modifier:+.0f}pts)"
+            )
+        )
+
+    suggested_res = cog['suggested_solution']
+    if historical_match:
+        suggested_res = f"Proven Past Resolution (TX-{historical_match['matched_ticket_number']}): {historical_match['resolution_note']}"
+
     summary_text = (
         f"🧠 Cognitive AI Diagnosis: {routing_reason} "
-        f"[Score: {priority_score}/100 | Urgency: {cog['urgency_score']} | Frustration: {cog['frustration_score']}]. "
-        f"💡 AI Suggested Solution: {cog['suggested_solution']}"
+        f"[Score: {priority_score}/100 | Urgency: {adjusted_urgency} | Frustration: {cog['frustration_score']}]. "
+        f"💡 AI Suggested Solution: {suggested_res}"
     )
 
     return ExplainabilityBreakdown(
         frustration_score=float(cog["frustration_score"]),
-        urgency_score=float(cog["urgency_score"]),
+        urgency_score=float(adjusted_urgency),
         customer_value_score=float(value_score),
         total_priority_score=priority_score,
         assigned_tier=assigned_tier,

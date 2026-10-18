@@ -138,7 +138,7 @@ function saveDB(db) {
 }
 
 // Calculate Cognitive Semantic AI Priority client-side (Deep Intent & Context Understanding)
-export function calculateClientPriority(subject, description, customerType) {
+export function calculateClientPriority(subject, description, customerType, customerPriority = 'Normal') {
   const text = `${subject} ${description}`.toLowerCase();
   
   // Semantic Outage / System Crash Patterns (English + Marathi)
@@ -162,6 +162,13 @@ export function calculateClientPriority(subject, description, customerType) {
   else if (isSecurity) urgency_score += 40;
   if (/urgent|emergency|immediately|asap|critical/.test(text)) urgency_score += 15;
   if (isRoutine && !isOutage && !isFinancial) urgency_score = Math.max(10, urgency_score - 15);
+
+  // Customer declared priority modifier
+  const prioStr = (customerPriority || 'Normal').toLowerCase();
+  if (prioStr === 'low') urgency_score -= 5;
+  else if (prioStr === 'high') urgency_score += 12;
+  else if (prioStr === 'urgent') urgency_score += 22;
+
   urgency_score = Math.min(100, Math.max(10, urgency_score));
 
   let sentiment_score = 30;
@@ -401,8 +408,36 @@ export async function handleMockRequest(endpoint, options = {}) {
     const rawUser = localStorage.getItem('triagex_user');
     const currentUser = rawUser ? JSON.parse(rawUser) : null;
     const custType = (currentUser && currentUser.customer_type) || 'Regular';
+    const customerPriority = body.customer_priority || 'Normal';
 
-    const expl = calculateClientPriority(body.subject, body.description, custType);
+    // Check for similar resolved ticket (Feature 5: Case-Based Historical Match)
+    let historicalMatch = null;
+    const searchTokens = (body.subject + ' ' + body.description).toLowerCase().match(/\b[a-z0-9_]{3,}\b/g) || [];
+    const stopWords = new Set(['the', 'and', 'for', 'with', 'this', 'that', 'from', 'have', 'when', 'what', 'help', 'please', 'issue', 'problem', 'ticket']);
+    const cleanTokens = new Set(searchTokens.filter(t => !stopWords.has(t)));
+
+    if (cleanTokens.size > 0) {
+      for (const pt of db.tickets) {
+        if (pt.status === 'Resolved' && pt.resolution_note) {
+          const ptTokens = (pt.subject + ' ' + (pt.description || '')).toLowerCase().match(/\b[a-z0-9_]{3,}\b/g) || [];
+          const ptClean = new Set(ptTokens.filter(t => !stopWords.has(t)));
+          const common = [...cleanTokens].filter(x => ptClean.has(x));
+          if (common.length >= 2) {
+            historicalMatch = {
+              matched_ticket_id: pt.id,
+              matched_ticket_number: pt.ticket_number,
+              matched_subject: pt.subject,
+              resolution_note: pt.resolution_note,
+              similarity_score: Math.min(96, Math.round(40 + (common.length * 15))),
+              matched_keywords: common.slice(0, 5)
+            };
+            break;
+          }
+        }
+      }
+    }
+
+    const expl = calculateClientPriority(body.subject, body.description, custType, customerPriority);
     const numId = Math.floor(1000 + Math.random() * 9000);
     const hex = Math.floor(Math.random() * 0xffff).toString(16).toUpperCase().padStart(4, '0');
     
@@ -428,12 +463,63 @@ export async function handleMockRequest(endpoint, options = {}) {
       created_at: new Date().toISOString(),
       sla_due_at: expl.sla_due_at,
       summary: `Automated predictive routing: ${expl.assigned_tier} priority assignment.`,
+      explainability: {
+        total_priority_score: expl.total_priority_score,
+        assigned_tier: expl.assigned_tier,
+        factors: [
+          {
+            factor: 'Cognitive Semantic Analysis',
+            score: expl.metrics.urgency_score,
+            weight: 40,
+            contribution: Math.round(expl.metrics.urgency_score * 0.4),
+            detail: `Diagnosed: ${expl.diagnosis} (Customer priority: ${customerPriority})`
+          },
+          {
+            factor: 'Sentiment & Frustration',
+            score: expl.metrics.sentiment_score,
+            weight: 40,
+            contribution: Math.round(expl.metrics.sentiment_score * 0.4),
+            detail: `Sentiment distress: ${expl.metrics.sentiment_score}/100`
+          },
+          {
+            factor: 'Customer Account Tier',
+            score: expl.metrics.customer_tier_score,
+            weight: 20,
+            contribution: Math.round(expl.metrics.customer_tier_score * 0.2),
+            detail: `${custType} Tier Account`
+          }
+        ],
+        detected_keywords: ['Technical', 'Urgency', customerPriority],
+        summary: `Cognitive AI Routing: ${expl.diagnosis}`
+      },
       explainability_json: JSON.stringify(expl),
+      attachments: body.attachments || [],
+      allow_call: Boolean(body.allow_call),
+      customer_phone: body.customer_phone || '',
+      customer_priority: customerPriority,
+      historical_match: historicalMatch,
+      notification_sent: null,
       csat_rating: null,
       csat_feedback: null
     };
 
     db.tickets.unshift(newTicket);
+
+    // If historical duplicate match found, automatically seed system resolution reply
+    if (historicalMatch) {
+      if (!db.replies[newTicket.id]) db.replies[newTicket.id] = [];
+      db.replies[newTicket.id].push({
+        id: `rep-${Date.now()}`,
+        ticket_id: newTicket.id,
+        author_id: null,
+        author_name: 'AI Case-Based Reasoning',
+        author_role: 'system',
+        message: `Hello ${newTicket.customer_name},\n\n🔍 Our AI identified that a very similar inquiry was previously resolved in ticket **${historicalMatch.matched_ticket_number}** (${historicalMatch.similarity_score}% match):\n\n**Previous Question:** ${historicalMatch.matched_subject}\n**Proven Resolution:** ${historicalMatch.resolution_note}\n\nOur human support specialists are reviewing your request, but the above proven answer may help you right away!`,
+        is_internal: false,
+        created_at: new Date().toISOString(),
+        attachments: []
+      });
+    }
 
     // If Critical, add notification
     if (expl.assigned_tier === 'Critical') {
@@ -501,7 +587,49 @@ export async function handleMockRequest(endpoint, options = {}) {
     return { message: 'Ticket released back to unassigned queue', ticket };
   }
 
-  // 11. TICKET STATUS
+  // 11. AUDIO CALL ENDPOINT (Feature 2)
+  const callMatch = pathname.match(/^\/tickets\/([^/]+)\/call$/);
+  if (callMatch && method === 'POST') {
+    const tid = callMatch[1];
+    const ticket = db.tickets.find(t => t.id === tid);
+    if (!ticket) throw new Error('Ticket not found');
+
+    const rawUser = localStorage.getItem('triagex_user');
+    const currentUser = rawUser ? JSON.parse(rawUser) : null;
+    const callerName = currentUser ? currentUser.name : 'Support Agent';
+    const duration = body.duration_seconds || 0;
+    const mins = Math.floor(duration / 60);
+    const secs = duration % 60;
+    const status = body.call_status || 'Completed';
+
+    if (!db.replies[tid]) db.replies[tid] = [];
+    const callRep = {
+      id: `rep-call-${Date.now()}`,
+      ticket_id: tid,
+      author_id: null,
+      author_name: callerName,
+      author_role: 'system',
+      message: `📞 Direct Audio Call (${status}) - Duration: ${mins}m ${secs < 10 ? '0' : ''}${secs}s. Handled with ${callerName}.`,
+      is_internal: false,
+      created_at: new Date().toISOString(),
+      attachments: []
+    };
+    db.replies[tid].push(callRep);
+
+    db.audit_logs.unshift({
+      id: `aud-${Date.now()}`,
+      ticket_id: tid,
+      action: 'VOICE_CALL_LOGGED',
+      details: `Direct audio call (${duration}s, Status: ${status}) with ${callerName}`,
+      performed_by: callerName,
+      timestamp: new Date().toISOString()
+    });
+
+    saveDB(db);
+    return { success: true, call_log: callRep };
+  }
+
+  // 12. TICKET STATUS & RESOLUTION NOTIFICATION (Feature 4)
   const statusMatch = pathname.match(/^\/tickets\/([^/]+)\/status$/);
   if (statusMatch && method === 'PATCH') {
     const id = statusMatch[1];
@@ -511,11 +639,44 @@ export async function handleMockRequest(endpoint, options = {}) {
     if (body.assigned_agent_id) ticket.assigned_agent_id = body.assigned_agent_id;
     if (body.assigned_agent_name) ticket.assigned_agent_name = body.assigned_agent_name;
     if (body.resolution_note) ticket.resolution_note = body.resolution_note;
+
+    if (ticket.status === 'Resolved') {
+      const nowIso = new Date().toISOString();
+      const phone = ticket.customer_phone || '+91 98765 43210';
+      const note = body.resolution_note || ticket.resolution_note || 'Resolved by support team.';
+      ticket.resolved_at = nowIso;
+      ticket.notification_sent = {
+        dispatched_at: nowIso,
+        email: {
+          to: ticket.customer_email,
+          status: 'Delivered',
+          subject: `✅ [Resolved] Ticket ${ticket.ticket_number}: ${ticket.subject}`,
+          body: `Dear ${ticket.customer_name},\n\nYour support ticket ${ticket.ticket_number} has been resolved.\n\nResolution Details:\n${note}\n\nBest regards,\nTriageX Operations`
+        },
+        sms: {
+          to: phone,
+          status: 'Delivered',
+          body: `TriageX Alert: Your ticket ${ticket.ticket_number} is Resolved! Note: ${note.slice(0, 50)}... Thank you.`
+        },
+        summary: `Automated resolution confirmation sent via Email to ${ticket.customer_email} and SMS to ${phone}.`
+      };
+
+      db.notifications.unshift({
+        id: `notif-${Date.now()}`,
+        user_id: ticket.customer_id,
+        title: `Ticket Resolved (${ticket.ticket_number})`,
+        message: `Your ticket has been marked as Resolved. Automated SMS & Email confirmation dispatched.`,
+        ticket_id: ticket.id,
+        is_read: 0,
+        created_at: nowIso
+      });
+    }
+
     saveDB(db);
     return { message: 'Status updated', ticket };
   }
 
-  // 12. TICKET REPLIES
+  // 13. TICKET REPLIES (Feature 1: Attachments & Feature 6: Live Chat)
   const repliesMatch = pathname.match(/^\/tickets\/([^/]+)\/replies$/);
   if (repliesMatch) {
     const tid = repliesMatch[1];
@@ -540,7 +701,8 @@ export async function handleMockRequest(endpoint, options = {}) {
         author_role: currentUser ? currentUser.role : 'agent',
         message: body.message,
         is_internal: Boolean(body.is_internal),
-        created_at: new Date().toISOString()
+        created_at: new Date().toISOString(),
+        attachments: body.attachments || []
       };
       db.replies[tid].push(newRep);
       saveDB(db);
